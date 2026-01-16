@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Fixed
+- Vite production build now sets base to `/ui/` so daemon-served UI assets resolve correctly.
+
 ## 0.1.0 - 2026-01-16
 
 ### Added
