@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-No changes yet.
+### Fixed
+- GitHub Actions publish workflow no longer fails during Node setup by avoiding the pnpm cache hook.
 
 ## 0.1.1 - 2026-01-16
 
