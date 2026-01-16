@@ -105,6 +105,8 @@ http://127.0.0.1:4142/
 - `docs/ARCHITECTURE.md`
 - `docs/TROUBLESHOOTING.md`
 
+Some of the scripts in this repo are copied from Steipete's excellent agent-scripts repository, see the license in the scripts folder.
+
 ## License
 
 MIT
