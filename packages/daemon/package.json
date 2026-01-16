@@ -1,7 +1,6 @@
 {
-  "name": "@webserver-manager/daemon",
+  "name": "@atimmer/devservers-daemon",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -15,7 +14,7 @@
   "dependencies": {
     "@fastify/cors": "^11.2.0",
     "@fastify/websocket": "^11.2.0",
-    "@webserver-manager/shared": "workspace:*",
+    "@atimmer/devservers-shared": "workspace:*",
     "execa": "^9.6.1",
     "fastify": "^5.7.1"
   }

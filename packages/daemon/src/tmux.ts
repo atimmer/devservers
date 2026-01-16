@@ -1,6 +1,6 @@
 import { execa } from "execa";
 import { setTimeout as delay } from "node:timers/promises";
-import type { DevServerService, ServiceStatus } from "@webserver-manager/shared";
+import type { DevServerService, ServiceStatus } from "@atimmer/devservers-shared";
 
 const SESSION_NAME = "devservers";
 const IDLE_COMMANDS = new Set(["zsh", "bash", "sh", "fish"]);

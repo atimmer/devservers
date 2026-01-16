@@ -1,7 +1,6 @@
 {
-  "name": "@webserver-manager/cli",
+  "name": "@atimmer/devservers",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -16,7 +15,7 @@
     "format": "prettier --write src"
   },
   "dependencies": {
-    "@webserver-manager/shared": "workspace:*",
+    "@atimmer/devservers-shared": "workspace:*",
     "commander": "^14.0.2"
   }
 }

@@ -8,7 +8,7 @@
     "types": ["node"],
     "baseUrl": ".",
     "paths": {
-      "@webserver-manager/shared": ["../shared/src/index.ts"]
+      "@atimmer/devservers-shared": ["../shared/src/index.ts"]
     }
   },
   "include": ["src"]

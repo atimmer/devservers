@@ -6,7 +6,7 @@ import {
   devServerConfigSchema,
   type DevServerConfig,
   type DevServerService
-} from "@webserver-manager/shared";
+} from "@atimmer/devservers-shared";
 
 export const resolveConfigPath = (override?: string) => {
   if (override) {

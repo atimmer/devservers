@@ -6,7 +6,7 @@ import {
   devServerServiceSchema,
   type DevServerService,
   type ServiceInfo
-} from "@webserver-manager/shared";
+} from "@atimmer/devservers-shared";
 import { readConfig, removeService, resolveConfigPath, upsertService, writeConfig } from "./config.js";
 import {
   capturePane,
