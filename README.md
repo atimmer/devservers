@@ -2,6 +2,12 @@
 
 Local dev server manager for macOS. Runs every service inside a single tmux session and gives you a UI + CLI to control them.
 
+## Motivation
+
+I started letting my AI agents manage dev servers, but they kept forgetting to turn them off. So I built a manager that shows all registered dev servers and can start/stop/restart them. With the skills you can simply say to your agent "Start dev server" or "Stop dev server" and it will work.
+
+There are also some niceties like an "Open" button to open your local URL and log streaming from the tmux window. That way you never have to manage terminal windows to see logs from your dev servers.
+
 ## Requirements
 
 - macOS
