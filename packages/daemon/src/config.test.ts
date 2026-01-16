@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import type { DevServerService } from "@atimmer/devservers-shared";
 import { readConfig, removeService, upsertService, writeConfig } from "./config.js";
 
 const createTempDir = async () => {
@@ -14,7 +15,7 @@ const sampleService = {
   command: "pnpm dev",
   port: 3000,
   portMode: "static"
-};
+} satisfies DevServerService;
 
 describe("config", () => {
   it("returns empty config when file is missing", async () => {
@@ -30,7 +31,7 @@ describe("config", () => {
     await writeConfig(configPath, { version: 1, services: [sampleService] });
     const config = await readConfig(configPath);
     expect(config.services).toHaveLength(1);
-    expect(config.services[0].name).toBe("api");
+    expect(config.services[0]?.name).toBe("api");
   });
 
   it("rejects duplicate services", async () => {
@@ -47,7 +48,7 @@ describe("config", () => {
     expect(withService.services).toHaveLength(1);
 
     const updated = upsertService(withService, { ...sampleService, command: "pnpm dev -- --debug" });
-    expect(updated.services[0].command).toBe("pnpm dev -- --debug");
+    expect(updated.services[0]?.command).toBe("pnpm dev -- --debug");
 
     const removed = removeService(updated, "api");
     expect(removed.services).toHaveLength(0);

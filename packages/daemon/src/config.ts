@@ -21,10 +21,10 @@ const defaultConfigPath = () => {
     );
   }
   if (process.platform === "win32") {
-    const appData = process.env.APPDATA ?? path.join(home, "AppData", "Roaming");
+    const appData = process.env["APPDATA"] ?? path.join(home, "AppData", "Roaming");
     return path.join(appData, "Devservers Manager", DEFAULT_CONFIG_FILENAME);
   }
-  const xdgConfig = process.env.XDG_CONFIG_HOME ?? path.join(home, ".config");
+  const xdgConfig = process.env["XDG_CONFIG_HOME"] ?? path.join(home, ".config");
   return path.join(xdgConfig, "devservers", DEFAULT_CONFIG_FILENAME);
 };
 
@@ -90,7 +90,7 @@ export const upsertService = (
   const existing = config.services[existingIndex];
   updated[existingIndex] = {
     ...service,
-    lastStartedAt: service.lastStartedAt ?? existing.lastStartedAt
+    lastStartedAt: service.lastStartedAt ?? existing?.lastStartedAt
   };
   return { ...config, services: updated };
 };

@@ -28,10 +28,10 @@ const defaultConfigPath = () => {
     );
   }
   if (process.platform === "win32") {
-    const appData = process.env.APPDATA ?? path.join(home, "AppData", "Roaming");
+    const appData = process.env["APPDATA"] ?? path.join(home, "AppData", "Roaming");
     return path.join(appData, "Devservers Manager", DEFAULT_CONFIG_FILENAME);
   }
-  const xdgConfig = process.env.XDG_CONFIG_HOME ?? path.join(home, ".config");
+  const xdgConfig = process.env["XDG_CONFIG_HOME"] ?? path.join(home, ".config");
   return path.join(xdgConfig, "devservers", DEFAULT_CONFIG_FILENAME);
 };
 
@@ -84,7 +84,7 @@ const upsertService = (
   const existing = config.services[existingIndex];
   updated[existingIndex] = {
     ...service,
-    lastStartedAt: service.lastStartedAt ?? existing.lastStartedAt
+    lastStartedAt: service.lastStartedAt ?? existing?.lastStartedAt
   };
   return { ...config, services: updated };
 };
@@ -395,7 +395,7 @@ program
       throw new Error(`Unknown skill '${name}'. Available: ${available.sort().join(", ")}`);
     }
 
-    const codexHome = process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex");
+    const codexHome = process.env["CODEX_HOME"] ?? path.join(os.homedir(), ".codex");
     const destRoot = path.resolve(options.dest ?? path.join(codexHome, "skills"));
 
     if (options.dryRun) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { devServerConfigSchema, devServerServiceSchema } from "./index";
+import { devServerConfigSchema, devServerServiceSchema } from "./index.js";
 
 describe("devServerServiceSchema", () => {
   it("accepts valid service", () => {

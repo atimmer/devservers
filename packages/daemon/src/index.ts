@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import cors from "@fastify/cors";
 import fastifyStatic from "@fastify/static";
 import websocket from "@fastify/websocket";
-import Fastify from "fastify";
+import Fastify, { type FastifyError } from "fastify";
 import {
   DAEMON_PORT,
   devServerServiceSchema,
@@ -42,7 +42,7 @@ const port = Number(getArgValue("--port") ?? DAEMON_PORT);
 
 const server = Fastify({ logger: true });
 
-server.setErrorHandler((error, request, reply) => {
+server.setErrorHandler((error: FastifyError, request, reply) => {
   request.log.error({ err: error }, "Request failed");
   if (reply.sent) {
     return;
