@@ -6,11 +6,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/atimmer/webserver-manager"
+    "url": "https://github.com/atimmer/devservers"
   },
-  "homepage": "https://github.com/atimmer/webserver-manager#readme",
+  "homepage": "https://github.com/atimmer/devservers#readme",
   "bugs": {
-    "url": "https://github.com/atimmer/webserver-manager/issues"
+    "url": "https://github.com/atimmer/devservers/issues"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
