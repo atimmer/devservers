@@ -44,13 +44,10 @@ jobs:
         run: pnpm run test
 
       - name: Publish shared
-        run: npm publish --provenance --access public --no-git-checks
-        working-directory: packages/shared
+        run: pnpm -C packages/shared publish --access public --no-git-checks --provenance
 
       - name: Publish daemon
-        run: npm publish --provenance --access public --no-git-checks
-        working-directory: packages/daemon
+        run: pnpm -C packages/daemon publish --access public --no-git-checks --provenance
 
       - name: Publish cli
-        run: npm publish --provenance --access public --no-git-checks
-        working-directory: packages/cli
+        run: pnpm -C packages/cli publish --access public --no-git-checks --provenance

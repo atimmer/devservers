@@ -2,9 +2,13 @@
 
 ## Unreleased
 
+No changes yet.
+
+## 0.1.2 - 2026-01-16
+
 ### Fixed
 - GitHub Actions publish workflow no longer fails during Node setup by avoiding the pnpm cache hook.
-- Publish workflow now uses npm trusted publishing with provenance via OIDC.
+- Publish workflow now uses `pnpm publish` with OIDC provenance so workspace deps are rewritten for published packages.
 - Package metadata now points to the correct GitHub repository for provenance validation.
 
 ## 0.1.1 - 2026-01-16
