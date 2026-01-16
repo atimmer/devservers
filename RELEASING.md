@@ -21,3 +21,7 @@ pnpm -C packages/cli publish --access public
 ```
 
 5. Tag the release in git and push.
+
+## GitHub Actions (manual)
+
+Run the `Publish to npm` workflow after setting `NPM_TOKEN` in repo secrets.
