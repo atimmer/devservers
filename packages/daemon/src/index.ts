@@ -34,6 +34,20 @@ const port = Number(getArgValue("--port") ?? DAEMON_PORT);
 
 const server = Fastify({ logger: true });
 
+server.setErrorHandler((error, request, reply) => {
+  request.log.error({ err: error }, "Request failed");
+  if (reply.sent) {
+    return;
+  }
+  const statusCode =
+    typeof error.statusCode === "number" && Number.isFinite(error.statusCode)
+      ? error.statusCode
+      : 500;
+  reply.code(statusCode).send({
+    error: statusCode === 500 ? "internal server error" : error.message
+  });
+});
+
 await server.register(cors, {
   origin: [/^http:\/\/localhost:\d+$/, /^http:\/\/127\.0\.0\.1:\d+$/, /^http:\/\/\[::1\]:\d+$/]
 });
@@ -187,19 +201,31 @@ server.post("/services/:name/restart", async (request, reply) => {
 server.get("/services/:name/logs", { websocket: true }, (connection, request) => {
   const params = request.params as { name: string };
   const query = request.query as { lines?: string };
-  const lines = Number(query?.lines ?? 200);
+  const requestedLines = Number(query?.lines);
+  const lines =
+    Number.isFinite(requestedLines) && requestedLines > 0 ? Math.trunc(requestedLines) : 200;
   let closed = false;
 
   const sendLogs = async () => {
     if (closed) {
       return;
     }
-    const payload = await capturePane(params.name, lines);
-    connection.socket.send(JSON.stringify({ type: "logs", payload }));
+    try {
+      const payload = await capturePane(params.name, lines);
+      connection.socket.send(JSON.stringify({ type: "logs", payload }));
+    } catch (error) {
+      request.log.error({ err: error }, "Failed to capture logs");
+    }
   };
 
-  const interval = setInterval(sendLogs, 1000);
-  sendLogs().catch(() => undefined);
+  const interval = setInterval(() => {
+    void sendLogs();
+  }, 1000);
+  void sendLogs();
+
+  connection.socket.on("error", (error) => {
+    request.log.error({ err: error }, "Logs websocket error");
+  });
 
   connection.socket.on("close", () => {
     closed = true;
