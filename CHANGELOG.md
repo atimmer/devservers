@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+No changes yet.
+
+## 0.1.1 - 2026-01-16
+
 ### Added
 - `devservers install-skill --agent <name>` to target non-Codex agents, with per-agent skills directories.
 
