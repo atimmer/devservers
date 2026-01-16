@@ -7,7 +7,8 @@ import {
   startService,
   stopService,
   type ServiceInfo,
-  type ServiceStatus
+  type ServiceStatus,
+  type PortMode
 } from "./api";
 
 const statusStyles: Record<ServiceStatus, string> = {
@@ -17,6 +18,11 @@ const statusStyles: Record<ServiceStatus, string> = {
 };
 
 const TMUX_SESSION = "devservers";
+const portModeLabels: Record<PortMode, string> = {
+  static: "Static",
+  detect: "Detect from logs",
+  registry: "Port registry"
+};
 
 const parseEnv = (value: string) => {
   const entries = value
@@ -87,7 +93,8 @@ export default function App() {
     cwd: "",
     command: "",
     port: "",
-    env: ""
+    env: "",
+    portMode: "static" as PortMode
   });
 
   const refresh = useCallback(async () => {
@@ -135,20 +142,6 @@ export default function App() {
     return () => socket.close();
   }, [activeLogService]);
 
-  useEffect(() => {
-    if (!activeLogService || !shouldScrollRef.current || logs.length === 0) {
-      return;
-    }
-    const raf = requestAnimationFrame(() => {
-      const container = logsRef.current;
-      if (container) {
-        container.scrollTop = container.scrollHeight;
-      }
-      shouldScrollRef.current = false;
-    });
-    return () => cancelAnimationFrame(raf);
-  }, [activeLogService, logs]);
-
   const handleAction = useCallback(
     async (action: "start" | "stop" | "restart", name: string) => {
       setError(null);
@@ -178,8 +171,31 @@ export default function App() {
     );
     return counts;
   }, [services]);
+  const displayLogs = useMemo(() => logs.replace(/\s+$/, ""), [logs]);
 
-  const resetForm = () => setFormState({ name: "", cwd: "", command: "", port: "", env: "" });
+  useEffect(() => {
+    if (!activeLogService || !shouldScrollRef.current || displayLogs.length === 0) {
+      return;
+    }
+    const raf = requestAnimationFrame(() => {
+      const container = logsRef.current;
+      if (container) {
+        container.scrollTop = container.scrollHeight;
+      }
+      shouldScrollRef.current = false;
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [activeLogService, displayLogs]);
+
+  const resetForm = () =>
+    setFormState({
+      name: "",
+      cwd: "",
+      command: "",
+      port: "",
+      env: "",
+      portMode: "static"
+    });
 
   const submitForm = async () => {
     setError(null);
@@ -188,6 +204,7 @@ export default function App() {
       cwd: formState.cwd.trim(),
       command: formState.command.trim(),
       port: formState.port ? Number(formState.port) : undefined,
+      portMode: formState.portMode,
       env: parseEnv(formState.env)
     };
 
@@ -277,7 +294,8 @@ export default function App() {
                     </div>
                     <div className="text-xs text-slate-300">{service.cwd}</div>
                     <div className="flex flex-wrap gap-3 text-xs text-slate-400">
-                      {service.port ? <span>Port {service.port}</span> : null}
+                      {service.port ? <span>Port {service.port}</span> : <span>No port yet</span>}
+                      <span>Mode {portModeLabels[service.portMode ?? "static"]}</span>
                       {service.env && Object.keys(service.env).length > 0 ? (
                         <span>{Object.keys(service.env).length} env vars</span>
                       ) : null}
@@ -359,7 +377,7 @@ export default function App() {
               ref={logsRef}
               className="mt-4 max-h-[50vh] overflow-auto rounded-2xl border border-white/10 bg-black/40 p-4 text-xs text-slate-200"
             >
-              {logs || "Waiting for logs..."}
+              {displayLogs.length > 0 ? displayLogs : logs ? "" : "Waiting for logs..."}
             </pre>
           </div>
         </div>
@@ -408,6 +426,24 @@ export default function App() {
                   />
                 </label>
               ))}
+
+              <label className="grid gap-2 text-xs uppercase tracking-[0.3em] text-slate-400">
+                Port mode
+                <select
+                  value={formState.portMode}
+                  onChange={(event) =>
+                    setFormState((prev) => ({
+                      ...prev,
+                      portMode: event.target.value as PortMode
+                    }))
+                  }
+                  className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm tracking-normal text-white outline-none focus:border-emerald-400/60"
+                >
+                  <option value="static">Static (use configured port)</option>
+                  <option value="detect">Detect from logs</option>
+                  <option value="registry">Port registry (coming soon)</option>
+                </select>
+              </label>
 
               <label className="grid gap-2 text-xs uppercase tracking-[0.3em] text-slate-400">
                 Env (KEY=VALUE per line)
