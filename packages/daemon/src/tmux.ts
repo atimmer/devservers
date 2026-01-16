@@ -75,31 +75,33 @@ const isPaneIdle = async (windowName: string) => {
 
 export const startWindow = async (service: DevServerService): Promise<boolean> => {
   await ensureSession();
-  const exists = await windowExists(service.name);
   const command = buildCommand(service);
 
-  if (!exists) {
-    await runTmux([
-      "new-window",
-      "-d",
-      "-t",
-      SESSION_NAME,
-      "-n",
-      service.name,
-      "-c",
-      service.cwd
-    ]);
-    await runTmux(["send-keys", "-t", `${SESSION_NAME}:${service.name}`, command, "C-m"]);
-    return true;
+  const exists = await windowExists(service.name);
+  if (exists) {
+    const [dead, idle] = await Promise.all([isPaneDead(service.name), isPaneIdle(service.name)]);
+    if (!dead && !idle) {
+      return false;
+    }
+    try {
+      await runTmux(["kill-window", "-t", `${SESSION_NAME}:${service.name}`]);
+    } catch {
+      // window may have been removed between checks
+    }
   }
 
-  const idle = await isPaneIdle(service.name);
-  if (idle) {
-    await runTmux(["send-keys", "-t", `${SESSION_NAME}:${service.name}`, command, "C-m"]);
-    return true;
-  }
-
-  return false;
+  await runTmux([
+    "new-window",
+    "-d",
+    "-t",
+    SESSION_NAME,
+    "-n",
+    service.name,
+    "-c",
+    service.cwd
+  ]);
+  await runTmux(["send-keys", "-t", `${SESSION_NAME}:${service.name}`, command, "C-m"]);
+  return true;
 };
 
 export const stopWindow = async (windowName: string) => {
