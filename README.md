@@ -27,10 +27,18 @@ pnpm add -g @24letters/devservers
 
 ## Quickstart
 
-Bootstrap the manager (daemon + UI):
+Bootstrap the manager to verify everything is working:
 
 ```
 devservers bootstrap
+```
+
+Then, install the skill to your AI agent of choice:
+
+```
+devservers install-skill --agent codex
+# Switch agents by changing the name
+devservers install-skill --agent claude
 ```
 
 Open the UI:
@@ -68,12 +76,20 @@ Override with:
 - `--config /path/to/devservers.json` (CLI or daemon)
 - `DEVSERVER_CONFIG=/path/to/devservers.json`
 
-## Skills (Codex)
+## Skills (Agents)
 
-Install all bundled skills:
+By default, skills install to `~/.<agent>/skills` (or `<AGENT>_HOME/skills` if set). Use `--dest` to override.
+
+Install all bundled skills for Codex (default):
 
 ```
 devservers install-skill
+```
+
+Install for a different agent:
+
+```
+devservers install-skill --agent claude
 ```
 
 Install a single skill:
@@ -82,10 +98,17 @@ Install a single skill:
 devservers install-skill devservers-register-service
 ```
 
+Switch between agents by re-running with a new `--agent` value:
+
+```
+devservers install-skill --agent codex
+devservers install-skill --agent cursor
+```
+
 Set a custom skills directory:
 
 ```
-CODEX_HOME=/path/to/codex devservers install-skill
+devservers install-skill --dest /path/to/skills
 ```
 
 ## From source (development)

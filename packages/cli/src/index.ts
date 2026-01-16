@@ -121,6 +121,23 @@ const daemonEntry = require.resolve("@24letters/devservers-daemon");
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const skillsRoot = path.join(packageRoot, "skills");
 
+const AGENT_HOME_ENV: Record<string, string> = {
+  codex: "CODEX_HOME",
+  claude: "CLAUDE_HOME",
+  cursor: "CURSOR_HOME",
+  windsurf: "WINDSURF_HOME"
+};
+
+const resolveAgentHome = (agentInput?: string) => {
+  const normalized = agentInput?.trim().toLowerCase() || "codex";
+  const envKey = AGENT_HOME_ENV[normalized] ?? `${normalized.toUpperCase()}_HOME`;
+  const envValue = process.env[envKey];
+  if (envValue) {
+    return path.resolve(envValue);
+  }
+  return path.join(os.homedir(), `.${normalized}`);
+};
+
 const IDLE_COMMANDS = new Set(["zsh", "bash", "sh", "fish"]);
 
 const pathExists = async (target: string) => {
@@ -377,8 +394,9 @@ program
 
 program
   .command("install-skill")
-  .description("Install Devservers Manager Codex skills")
+  .description("Install Devservers Manager skills for your AI agent")
   .argument("[name]", "skill name (default: install all)")
+  .option("--agent <name>", "agent name (default: codex)")
   .option("--dest <path>", "skills directory")
   .option("--dry-run", "show what would be installed", false)
   .option("--force", "overwrite existing skills", false)
@@ -395,8 +413,8 @@ program
       throw new Error(`Unknown skill '${name}'. Available: ${available.sort().join(", ")}`);
     }
 
-    const codexHome = process.env["CODEX_HOME"] ?? path.join(os.homedir(), ".codex");
-    const destRoot = path.resolve(options.dest ?? path.join(codexHome, "skills"));
+    const agentHome = resolveAgentHome(options.agent);
+    const destRoot = path.resolve(options.dest ?? path.join(agentHome, "skills"));
 
     if (options.dryRun) {
       console.log(`Would install: ${targets.sort().join(", ")}`);

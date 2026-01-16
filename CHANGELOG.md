@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Added
+- `devservers install-skill --agent <name>` to target non-Codex agents, with per-agent skills directories.
+
 ### Fixed
 - Vite production build now sets base to `/ui/` so daemon-served UI assets resolve correctly.
 

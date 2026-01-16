@@ -46,6 +46,7 @@ Note: `start`, `stop`, and `restart` will auto-start the local daemon/UI when th
 - `--restart`: restart the manager daemon window
 
 ## Skill install options
-- `--dest <path>`: override `$CODEX_HOME/skills`
+- `--agent <name>`: target agent (default `codex`, uses `<AGENT>_HOME` or `~/.<agent>` as the base path)
+- `--dest <path>`: override the agent skills directory
 - `--force`: overwrite existing skills
 - `--dry-run`: show actions without writing
