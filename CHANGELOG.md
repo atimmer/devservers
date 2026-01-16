@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-No changes yet.
+### Fixed
+- Publish workflow now uses `pnpm publish --filter` to avoid npm workspace publish errors.
 
 ## 0.1.2 - 2026-01-16
 

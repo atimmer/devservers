@@ -44,10 +44,10 @@ jobs:
         run: pnpm run test
 
       - name: Publish shared
-        run: pnpm -C packages/shared publish --access public --no-git-checks --provenance
+        run: pnpm publish --filter @24letters/devservers-shared --access public --no-git-checks --provenance
 
       - name: Publish daemon
-        run: pnpm -C packages/daemon publish --access public --no-git-checks --provenance
+        run: pnpm publish --filter @24letters/devservers-daemon --access public --no-git-checks --provenance
 
       - name: Publish cli
-        run: pnpm -C packages/cli publish --access public --no-git-checks --provenance
+        run: pnpm publish --filter @24letters/devservers --access public --no-git-checks --provenance
