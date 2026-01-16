@@ -1,14 +1,14 @@
 ---
 name: devservers-register-service
-description: Register a dev server in the local Devservers Manager config using the CLI. Use when an agent needs to add/update/remove a service entry (name, cwd, command, env, port, healthUrl) so it appears in the manager UI and tmux session.
+description: Register a dev server using the CLI. Use when an agent needs to add/update/remove a service entry (name, cwd, command, env, port).
 ---
 
 # Devservers Register Service
 
 ## Overview
 
-Register a service via the CLI so the manager UI can control it. Optionally start it through the daemon if requested.
-Rule: Use CLI only. Do not edit config files directly.
+Register a service via the CLI so it can be managed. Optionally start it if requested.
+Rule: Use CLI only. Do not edit config files directly or interact with internal services.
 
 ## Workflow
 
@@ -19,13 +19,13 @@ Collect:
 - `cwd` (absolute path)
 - `command` (shell command, e.g. `pnpm dev`)
 - optional `env` entries (`KEY=VALUE`)
-- optional `port` and/or `healthUrl`
+- optional `port`
 
 Ask if the user wants the service started immediately.
 
-## 2) Register via CLI (preferred)
+## 2) Register via CLI
 
-Preferred (installed CLI):
+CLI (from anywhere):
 
 ```
 devservers add \
@@ -33,23 +33,10 @@ devservers add \
   --cwd <absolute-path> \
   --command "<command>" \
   --port <port> \
-  --health-url <url> \
   --env KEY=VALUE
 ```
 
-From the repo root (dev CLI):
-
-```
-pnpm -C packages/cli dev -- add \
-  --name <name> \
-  --cwd <absolute-path> \
-  --command "<command>" \
-  --port <port> \
-  --health-url <url> \
-  --env KEY=VALUE
-```
-
-- `--port`, `--health-url`, and `--env` are optional.
+- `--port` and `--env` are optional.
 - Repeat `--env` for multiple vars.
 
 Verify:
@@ -58,42 +45,13 @@ Verify:
 devservers list
 ```
 
-Repo dev:
+### 3) Start service (optional)
 
-```
-pnpm -C packages/cli dev -- list
-```
-
-### 4) Start service (optional)
-
-If the daemon is running (bootstrap active), start via CLI:
+Start via CLI:
 
 ```
 devservers start <name>
 ```
+### 4) Troubleshoot
 
-If the daemon is not running, start the manager first:
-
-```
-devservers bootstrap
-```
-
-Repo dev:
-
-```
-pnpm run bootstrap
-```
-
-### 5) Read logs (optional)
-
-Attach to the tmux session and select the service window:
-
-```
-tmux attach -t devservers
-```
-
-Detach with `Ctrl-b d`.
-
-### 6) Troubleshoot
-
-- If `start` fails, ensure tmux is installed and the daemon is running on `127.0.0.1:4141`.
+- If a CLI call fails due to connectivity, ask the user to start the manager and retry.
