@@ -73,12 +73,16 @@ const ActionButton = ({
   label,
   onClick,
   variant,
-  className
+  className,
+  isLoading = false,
+  disabled = false
 }: {
   label: string;
   onClick: () => void;
   variant: "start" | "stop" | "restart";
   className?: string;
+  isLoading?: boolean;
+  disabled?: boolean;
 }) => {
   const styles =
     variant === "start"
@@ -91,9 +95,15 @@ const ActionButton = ({
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] transition ${styles} ${className ?? ""}`}
+      disabled={disabled}
+      className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] transition disabled:cursor-not-allowed disabled:opacity-70 ${styles} ${className ?? ""}`}
     >
-      {label}
+      <span className="inline-flex items-center justify-center gap-2">
+        {isLoading ? (
+          <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+        ) : null}
+        <span>{label}</span>
+      </span>
     </button>
   );
 };
@@ -107,6 +117,7 @@ export default function App() {
   const [copied, setCopied] = useState(false);
   const logsRef = useRef<HTMLPreElement | null>(null);
   const shouldScrollRef = useRef(false);
+  const [pendingStarts, setPendingStarts] = useState<string[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [formMode, setFormMode] = useState<"add" | "edit">("add");
   const [editingService, setEditingService] = useState<ServiceInfo | null>(null);
@@ -138,6 +149,25 @@ export default function App() {
   }, [refresh]);
 
   useEffect(() => {
+    if (pendingStarts.length === 0) {
+      return;
+    }
+    const resolved = new Set(
+      services
+        .filter(
+          (service) =>
+            pendingStarts.includes(service.name) &&
+            (service.status === "running" || service.status === "error")
+        )
+        .map((service) => service.name)
+    );
+    if (resolved.size === 0) {
+      return;
+    }
+    setPendingStarts((prev) => prev.filter((name) => !resolved.has(name)));
+  }, [pendingStarts, services]);
+
+  useEffect(() => {
     if (!activeLogService) {
       setLogs("");
       setCopied(false);
@@ -167,6 +197,9 @@ export default function App() {
   const handleAction = useCallback(
     async (action: "start" | "stop" | "restart", name: string) => {
       setError(null);
+      if (action === "start") {
+        setPendingStarts((prev) => (prev.includes(name) ? prev : [...prev, name]));
+      }
       try {
         if (action === "start") {
           await startService(name);
@@ -178,6 +211,9 @@ export default function App() {
         await refresh();
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
+        if (action === "start") {
+          setPendingStarts((prev) => prev.filter((pending) => pending !== name));
+        }
       }
     },
     [refresh]
@@ -360,6 +396,8 @@ export default function App() {
                           label="Start"
                           variant="start"
                           onClick={() => handleAction("start", service.name)}
+                          isLoading={pendingStarts.includes(service.name)}
+                          disabled={pendingStarts.includes(service.name)}
                           className="w-full justify-center"
                         />
                       )}
