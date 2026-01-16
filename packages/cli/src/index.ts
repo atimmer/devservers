@@ -3,6 +3,7 @@ import { access, cp, mkdir, readFile, readdir, rename, stat, writeFile } from "n
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import {
@@ -120,6 +121,8 @@ const daemonEntry = require.resolve("@atimmer/devservers-daemon");
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const skillsRoot = path.join(packageRoot, "skills");
 
+const IDLE_COMMANDS = new Set(["zsh", "bash", "sh", "fish"]);
+
 const pathExists = async (target: string) => {
   try {
     await access(target);
@@ -165,6 +168,21 @@ const tmuxWindowExists = (session: string, windowName: string) => {
   return tmuxWindowNames(session).includes(windowName);
 };
 
+const tmuxPaneCommand = (session: string, windowName: string) => {
+  const result = runTmux(
+    ["display-message", "-t", `${session}:${windowName}`, "-p", "#{pane_current_command}"],
+    true
+  );
+  if (result.status !== 0 || !result.stdout) {
+    return "";
+  }
+  return result.stdout.trim();
+};
+
+const tmuxPaneIdle = (session: string, windowName: string) => {
+  return IDLE_COMMANDS.has(tmuxPaneCommand(session, windowName));
+};
+
 const tmuxStartWindow = (
   session: string,
   windowName: string,
@@ -174,6 +192,9 @@ const tmuxStartWindow = (
 ) => {
   if (tmuxWindowExists(session, windowName)) {
     if (!restart) {
+      if (tmuxPaneIdle(session, windowName)) {
+        runTmux(["send-keys", "-t", `${session}:${windowName}`, command, "C-m"]);
+      }
       return;
     }
     runTmux(["kill-window", "-t", `${session}:${windowName}`]);
@@ -181,6 +202,77 @@ const tmuxStartWindow = (
 
   runTmux(["new-window", "-d", "-t", session, "-n", windowName, "-c", cwd]);
   runTmux(["send-keys", "-t", `${session}:${windowName}`, command, "C-m"]);
+};
+
+const buildDaemonCommand = (configPath: string, port: number) => {
+  return [
+    shellQuote(process.execPath),
+    shellQuote(daemonEntry),
+    "--config",
+    shellQuote(configPath),
+    "--port",
+    shellQuote(String(port))
+  ].join(" ");
+};
+
+const startDaemonWindow = async (configPath: string, port: number, restart: boolean) => {
+  const session = "devservers";
+  const daemonWindow = "manager-daemon";
+  const cwd = process.cwd();
+  if (!(await pathExists(daemonEntry))) {
+    throw new Error(
+      "Daemon build not found. Run `pnpm -C packages/daemon build` (or `pnpm -r build`) before bootstrapping."
+    );
+  }
+  const daemonCommand = buildDaemonCommand(configPath, port);
+
+  if (!tmuxSessionExists(session)) {
+    runTmux(["new-session", "-d", "-s", session, "-n", daemonWindow, "-c", cwd]);
+    runTmux(["send-keys", "-t", `${session}:${daemonWindow}`, daemonCommand, "C-m"]);
+  } else {
+    tmuxStartWindow(session, daemonWindow, daemonCommand, cwd, restart);
+  }
+};
+
+const isLoopbackHost = (hostname: string) => {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+};
+
+const isDaemonReachable = async (baseUrl: string) => {
+  try {
+    await fetch(`${baseUrl}/services`);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const waitForDaemon = async (baseUrl: string, attempts = 20, delayMs = 250) => {
+  for (let i = 0; i < attempts; i += 1) {
+    if (await isDaemonReachable(baseUrl)) {
+      return true;
+    }
+    await delay(delayMs);
+  }
+  return false;
+};
+
+const ensureDaemonRunning = async (baseUrl: string, configPath: string) => {
+  if (await isDaemonReachable(baseUrl)) {
+    return;
+  }
+
+  const url = new URL(baseUrl);
+  if (!isLoopbackHost(url.hostname)) {
+    return;
+  }
+
+  const port = url.port ? Number(url.port) : DAEMON_PORT;
+  await startDaemonWindow(configPath, port, false);
+  const ready = await waitForDaemon(baseUrl);
+  if (!ready) {
+    throw new Error("Daemon failed to start. Run `devservers bootstrap` to inspect.");
+  }
 };
 
 const program = new Command();
@@ -274,28 +366,7 @@ program
     }
 
     const session = "devservers";
-    const daemonWindow = "manager-daemon";
-    const cwd = process.cwd();
-    if (!(await pathExists(daemonEntry))) {
-      throw new Error(
-        "Daemon build not found. Run `pnpm -C packages/daemon build` (or `pnpm -r build`) before bootstrapping."
-      );
-    }
-    const daemonCommand = [
-      shellQuote(process.execPath),
-      shellQuote(daemonEntry),
-      "--config",
-      shellQuote(configPath),
-      "--port",
-      shellQuote(String(port))
-    ].join(" ");
-
-    if (!tmuxSessionExists(session)) {
-      runTmux(["new-session", "-d", "-s", session, "-n", daemonWindow, "-c", cwd]);
-      runTmux(["send-keys", "-t", `${session}:${daemonWindow}`, daemonCommand, "C-m"]);
-    } else {
-      tmuxStartWindow(session, daemonWindow, daemonCommand, cwd, Boolean(options.restart));
-    }
+    await startDaemonWindow(configPath, port, Boolean(options.restart));
 
     console.log(`Manager running in tmux session '${session}'.`);
     console.log(`UI: http://127.0.0.1:${port}/ui/`);
@@ -360,7 +431,9 @@ const daemonCommand = (
     .description(description)
     .argument("<service>")
     .action(async (service: string) => {
-      const options = program.opts<{ daemon: string }>();
+      const options = program.opts<{ daemon: string; config?: string }>();
+      const configPath = resolveConfigPath(options.config);
+      await ensureDaemonRunning(options.daemon, configPath);
       await callDaemon(options.daemon, `/services/${service}/${pathName}`, "POST");
       console.log(`${pastTense} ${service}`);
     });

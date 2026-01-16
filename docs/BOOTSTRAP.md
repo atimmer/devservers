@@ -32,6 +32,12 @@ Creates tmux session `devservers` with windows:
 - `manager-daemon`
 - `manager-ui` (Vite dev server)
 
+Open the dev UI at:
+
+```
+http://127.0.0.1:4142/
+```
+
 Restart dev windows:
 
 ```

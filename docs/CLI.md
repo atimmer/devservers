@@ -31,6 +31,8 @@ devservers install-skill
 devservers install-skill devservers-register-service
 ```
 
+Note: `start`, `stop`, and `restart` will auto-start the local daemon/UI when they are not running.
+
 ## Options
 - `-c, --config <path>`: override config file path
 - `--daemon <url>`: daemon URL (default `http://127.0.0.1:4141`)

@@ -54,6 +54,7 @@ Default config path (macOS):
 ```
 
 Override with:
+
 - `--config /path/to/devservers.json` (CLI or daemon)
 - `DEVSERVER_CONFIG=/path/to/devservers.json`
 
@@ -87,6 +88,12 @@ Start the dev daemon + UI (Vite):
 
 ```
 pnpm run bootstrap
+```
+
+Dev UI:
+
+```
+http://127.0.0.1:4142/
 ```
 
 ## Docs
