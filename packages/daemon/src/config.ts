@@ -1,4 +1,5 @@
-import { readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import {
   CONFIG_ENV_VAR,
@@ -7,6 +8,25 @@ import {
   type DevServerConfig,
   type DevServerService
 } from "@atimmer/devservers-shared";
+
+const defaultConfigPath = () => {
+  const home = os.homedir();
+  if (process.platform === "darwin") {
+    return path.join(
+      home,
+      "Library",
+      "Application Support",
+      "Devservers Manager",
+      DEFAULT_CONFIG_FILENAME
+    );
+  }
+  if (process.platform === "win32") {
+    const appData = process.env.APPDATA ?? path.join(home, "AppData", "Roaming");
+    return path.join(appData, "Devservers Manager", DEFAULT_CONFIG_FILENAME);
+  }
+  const xdgConfig = process.env.XDG_CONFIG_HOME ?? path.join(home, ".config");
+  return path.join(xdgConfig, "devservers", DEFAULT_CONFIG_FILENAME);
+};
 
 export const resolveConfigPath = (override?: string) => {
   if (override) {
@@ -18,7 +38,7 @@ export const resolveConfigPath = (override?: string) => {
     return path.resolve(envPath);
   }
 
-  return path.resolve(process.cwd(), DEFAULT_CONFIG_FILENAME);
+  return defaultConfigPath();
 };
 
 const ensureUniqueServices = (services: DevServerService[]) => {
@@ -50,6 +70,7 @@ export const writeConfig = async (configPath: string, config: DevServerConfig) =
   const safeConfig = devServerConfigSchema.parse(config);
   ensureUniqueServices(safeConfig.services);
   const dir = path.dirname(configPath);
+  await mkdir(dir, { recursive: true });
   const tempPath = path.join(dir, `.devservers.${Date.now()}.tmp`);
   const payload = `${JSON.stringify(safeConfig, null, 2)}\n`;
   await writeFile(tempPath, payload, "utf-8");
