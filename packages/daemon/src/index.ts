@@ -1,6 +1,10 @@
-import Fastify from "fastify";
+import { existsSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import cors from "@fastify/cors";
+import fastifyStatic from "@fastify/static";
 import websocket from "@fastify/websocket";
+import Fastify from "fastify";
 import {
   DAEMON_PORT,
   devServerServiceSchema,
@@ -34,6 +38,18 @@ await server.register(cors, {
 });
 
 await server.register(websocket);
+
+const uiRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "ui");
+if (existsSync(uiRoot)) {
+  await server.register(fastifyStatic, {
+    root: uiRoot,
+    prefix: "/ui/"
+  });
+
+  server.get("/", async (_request, reply) => {
+    return reply.redirect("/ui/");
+  });
+}
 
 const listServices = async (): Promise<ServiceInfo[]> => {
   const config = await readConfig(configPath);

@@ -6,13 +6,14 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsup",
+    "build": "pnpm -C ../../apps/ui build && tsup && node scripts/copy-ui.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src",
     "format": "prettier --write src"
   },
   "dependencies": {
     "@fastify/cors": "^11.2.0",
+    "@fastify/static": "^8.3.0",
     "@fastify/websocket": "^11.2.0",
     "@atimmer/devservers-shared": "workspace:*",
     "execa": "^9.6.1",
