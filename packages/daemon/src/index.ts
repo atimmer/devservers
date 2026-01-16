@@ -57,7 +57,8 @@ server.setErrorHandler((error, request, reply) => {
 });
 
 await server.register(cors, {
-  origin: [/^http:\/\/localhost:\d+$/, /^http:\/\/127\.0\.0\.1:\d+$/, /^http:\/\/\[::1\]:\d+$/]
+  origin: [/^http:\/\/localhost:\d+$/, /^http:\/\/127\.0\.0\.1:\d+$/, /^http:\/\/\[::1\]:\d+$/],
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
 });
 
 await server.register(websocket);
