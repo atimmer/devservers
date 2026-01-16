@@ -41,6 +41,20 @@ export const addService = async (service: Omit<ServiceInfo, "status" | "message"
   }
 };
 
+export const updateService = async (
+  name: string,
+  service: Omit<ServiceInfo, "status" | "message">
+) => {
+  const response = await fetch(`${API_BASE}/services/${name}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(service)
+  });
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+};
+
 const postAction = async (name: string, action: "start" | "stop" | "restart") => {
   const response = await fetch(`${API_BASE}/services/${name}/${action}`, { method: "POST" });
   if (!response.ok) {

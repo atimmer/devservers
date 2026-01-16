@@ -6,6 +6,7 @@ import {
   restartService,
   startService,
   stopService,
+  updateService,
   type ServiceInfo,
   type ServiceStatus,
   type PortMode
@@ -26,6 +27,14 @@ const buildServiceUrl = (service: ServiceInfo) => {
   const protocol = typeof window === "undefined" ? "http:" : window.location.protocol;
   const scheme = protocol === "https:" ? "https:" : "http:";
   return `${scheme}//${hostname}:${service.port}`;
+};
+const formatEnv = (env?: Record<string, string>) => {
+  if (!env || Object.keys(env).length === 0) {
+    return "";
+  }
+  return Object.entries(env)
+    .map(([key, value]) => `${key}=${value}`)
+    .join("\n");
 };
 const portModeLabels: Record<PortMode, string> = {
   static: "Static",
@@ -63,11 +72,13 @@ const ServiceStatusPill = ({ status }: { status: ServiceStatus }) => (
 const ActionButton = ({
   label,
   onClick,
-  variant
+  variant,
+  className
 }: {
   label: string;
   onClick: () => void;
   variant: "start" | "stop" | "restart";
+  className?: string;
 }) => {
   const styles =
     variant === "start"
@@ -80,7 +91,7 @@ const ActionButton = ({
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] transition ${styles}`}
+      className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] transition ${styles} ${className ?? ""}`}
     >
       {label}
     </button>
@@ -97,6 +108,8 @@ export default function App() {
   const logsRef = useRef<HTMLPreElement | null>(null);
   const shouldScrollRef = useRef(false);
   const [showForm, setShowForm] = useState(false);
+  const [formMode, setFormMode] = useState<"add" | "edit">("add");
+  const [editingService, setEditingService] = useState<ServiceInfo | null>(null);
   const [formState, setFormState] = useState({
     name: "",
     cwd: "",
@@ -205,11 +218,18 @@ export default function App() {
       env: "",
       portMode: "static"
     });
+  const closeForm = () => {
+    setShowForm(false);
+    setFormMode("add");
+    setEditingService(null);
+    resetForm();
+  };
 
   const submitForm = async () => {
     setError(null);
+    const name = formState.name.trim();
     const payload = {
-      name: formState.name.trim(),
+      name,
       cwd: formState.cwd.trim(),
       command: formState.command.trim(),
       port: formState.port ? Number(formState.port) : undefined,
@@ -218,9 +238,12 @@ export default function App() {
     };
 
     try {
-      await addService(payload);
-      resetForm();
-      setShowForm(false);
+      if (formMode === "edit" && editingService) {
+        await updateService(editingService.name, payload);
+      } else {
+        await addService(payload);
+      }
+      closeForm();
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -247,7 +270,12 @@ export default function App() {
             </div>
             <button
               type="button"
-              onClick={() => setShowForm(true)}
+              onClick={() => {
+                setFormMode("add");
+                setEditingService(null);
+                resetForm();
+                setShowForm(true);
+              }}
               className="rounded-full border border-slate-500/40 bg-white/10 px-5 py-3 text-xs font-semibold uppercase tracking-[0.3em] text-white transition hover:border-white/60 hover:bg-white/20"
             >
               Add Service
@@ -310,48 +338,80 @@ export default function App() {
                       ) : null}
                     </div>
                   </div>
-                  <div className="flex flex-wrap gap-3">
-                    {service.status === "running" ? null : (
+                  <div className="grid gap-4 sm:min-w-[260px] sm:grid-cols-2">
+                    <div className="grid gap-2">
+                      <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500">
+                        Controls
+                      </p>
+                      {service.status === "running" ? null : (
+                        <ActionButton
+                          label="Start"
+                          variant="start"
+                          onClick={() => handleAction("start", service.name)}
+                          className="w-full justify-center"
+                        />
+                      )}
                       <ActionButton
-                        label="Start"
-                        variant="start"
-                        onClick={() => handleAction("start", service.name)}
+                        label="Restart"
+                        variant="restart"
+                        onClick={() => handleAction("restart", service.name)}
+                        className="w-full justify-center"
                       />
-                    )}
-                    <ActionButton
-                      label="Restart"
-                      variant="restart"
-                      onClick={() => handleAction("restart", service.name)}
-                    />
-                    {service.status === "running" && service.port ? (
+                      {service.status === "stopped" ? null : (
+                        <ActionButton
+                          label="Stop"
+                          variant="stop"
+                          onClick={() => handleAction("stop", service.name)}
+                          className="w-full justify-center"
+                        />
+                      )}
+                    </div>
+                    <div className="grid gap-2">
+                      <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500">
+                        Utilities
+                      </p>
+                      {service.status === "running" && service.port ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const url = buildServiceUrl(service);
+                            if (!url) {
+                              return;
+                            }
+                            window.open(url, "_blank", "noopener,noreferrer");
+                          }}
+                          className="w-full rounded-full border border-white/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:border-white/60"
+                        >
+                          Open
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         onClick={() => {
-                          const url = buildServiceUrl(service);
-                          if (!url) {
-                            return;
-                          }
-                          window.open(url, "_blank", "noopener,noreferrer");
+                          setFormMode("edit");
+                          setEditingService(service);
+                          setFormState({
+                            name: service.name,
+                            cwd: service.cwd,
+                            command: service.command,
+                            port: service.port ? String(service.port) : "",
+                            env: formatEnv(service.env),
+                            portMode: service.portMode ?? "static"
+                          });
+                          setShowForm(true);
                         }}
-                        className="rounded-full border border-white/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:border-white/60"
+                        className="w-full rounded-full border border-white/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:border-white/60"
                       >
-                        Open
+                        Edit
                       </button>
-                    ) : null}
-                    {service.status === "stopped" ? null : (
-                      <ActionButton
-                        label="Stop"
-                        variant="stop"
-                        onClick={() => handleAction("stop", service.name)}
-                      />
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => setActiveLogService(service)}
-                      className="rounded-full border border-white/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:border-white/60"
-                    >
-                      Logs
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveLogService(service)}
+                        className="w-full rounded-full border border-white/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:border-white/60"
+                      >
+                        Logs
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -412,14 +472,17 @@ export default function App() {
           <div className="w-full max-w-2xl rounded-3xl border border-white/10 bg-[#0c1118] p-6">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <p className="text-xs uppercase tracking-[0.3em] text-slate-400">New Service</p>
-                <h3 className="text-lg font-semibold text-white">Add a dev server</h3>
+                <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                  {formMode === "edit" ? "Edit Service" : "New Service"}
+                </p>
+                <h3 className="text-lg font-semibold text-white">
+                  {formMode === "edit" ? "Update the dev server" : "Add a dev server"}
+                </h3>
               </div>
               <button
                 type="button"
                 onClick={() => {
-                  setShowForm(false);
-                  resetForm();
+                  closeForm();
                 }}
                 className="rounded-full border border-white/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:border-white/60"
               >
@@ -433,23 +496,31 @@ export default function App() {
                 { label: "Working dir", key: "cwd", placeholder: "/Users/anton/Code/api" },
                 { label: "Command", key: "command", placeholder: "pnpm dev" },
                 { label: "Port", key: "port", placeholder: "3000" }
-              ].map((field) => (
-                <label key={field.key} className="grid gap-2 text-xs uppercase tracking-[0.3em] text-slate-400">
-                  {field.label}
-                  <input
-                    type="text"
-                    value={formState[field.key as keyof typeof formState]}
-                    onChange={(event) =>
-                      setFormState((prev) => ({
-                        ...prev,
-                        [field.key]: event.target.value
-                      }))
-                    }
-                    placeholder={field.placeholder}
-                    className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm tracking-normal text-white outline-none focus:border-emerald-400/60"
-                  />
-                </label>
-              ))}
+              ].map((field) => {
+                const isNameField = field.key === "name";
+                const isDisabled = formMode === "edit" && isNameField;
+                return (
+                  <label
+                    key={field.key}
+                    className="grid gap-2 text-xs uppercase tracking-[0.3em] text-slate-400"
+                  >
+                    {field.label}
+                    <input
+                      type="text"
+                      value={formState[field.key as keyof typeof formState]}
+                      onChange={(event) =>
+                        setFormState((prev) => ({
+                          ...prev,
+                          [field.key]: event.target.value
+                        }))
+                      }
+                      placeholder={field.placeholder}
+                      disabled={isDisabled}
+                      className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm tracking-normal text-white outline-none transition focus:border-emerald-400/60 disabled:cursor-not-allowed disabled:opacity-60"
+                    />
+                  </label>
+                );
+              })}
 
               <label className="grid gap-2 text-xs uppercase tracking-[0.3em] text-slate-400">
                 Port mode
@@ -485,8 +556,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => {
-                  setShowForm(false);
-                  resetForm();
+                  closeForm();
                 }}
                 className="rounded-full border border-white/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:border-white/60"
               >
@@ -497,7 +567,7 @@ export default function App() {
                 onClick={submitForm}
                 className="rounded-full bg-emerald-500 px-5 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-950 transition hover:bg-emerald-400"
               >
-                Save Service
+                {formMode === "edit" ? "Save Changes" : "Save Service"}
               </button>
             </div>
           </div>
