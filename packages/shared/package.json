@@ -2,6 +2,16 @@
   "name": "@atimmer/devservers-shared",
   "version": "0.1.0",
   "type": "module",
+  "description": "Shared types and schema for Devservers Manager.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/atimmer/webserver-manager"
+  },
+  "homepage": "https://github.com/atimmer/webserver-manager#readme",
+  "bugs": {
+    "url": "https://github.com/atimmer/webserver-manager/issues"
+  },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
@@ -9,6 +19,23 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "devservers",
+    "schema",
+    "types",
+    "shared"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",

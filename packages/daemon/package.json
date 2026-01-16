@@ -2,8 +2,42 @@
   "name": "@atimmer/devservers-daemon",
   "version": "0.1.0",
   "type": "module",
+  "description": "Fastify daemon for Devservers Manager.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/atimmer/webserver-manager"
+  },
+  "homepage": "https://github.com/atimmer/webserver-manager#readme",
+  "bugs": {
+    "url": "https://github.com/atimmer/webserver-manager/issues"
+  },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "devservers-daemon": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "devservers",
+    "tmux",
+    "daemon",
+    "fastify",
+    "macos"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "os": [
+    "darwin"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "pnpm -C ../../apps/ui build && tsup && node scripts/copy-ui.mjs",

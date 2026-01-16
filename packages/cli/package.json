@@ -2,10 +2,42 @@
   "name": "@atimmer/devservers",
   "version": "0.1.0",
   "type": "module",
+  "description": "Local dev server manager CLI for macOS.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/atimmer/webserver-manager"
+  },
+  "homepage": "https://github.com/atimmer/webserver-manager#readme",
+  "bugs": {
+    "url": "https://github.com/atimmer/webserver-manager/issues"
+  },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
     "devservers": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "skills",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "devservers",
+    "tmux",
+    "devtools",
+    "cli",
+    "macos"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "os": [
+    "darwin"
+  ],
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "dev": "tsx src/index.ts",
@@ -15,6 +47,7 @@
     "format": "prettier --write src"
   },
   "dependencies": {
+    "@atimmer/devservers-daemon": "workspace:*",
     "@atimmer/devservers-shared": "workspace:*",
     "commander": "^14.0.2"
   }
