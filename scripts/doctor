@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+missing=0
+
+check_cmd() {
+  local name="$1"
+  if ! command -v "$name" >/dev/null 2>&1; then
+    echo "Missing: $name"
+    missing=1
+  else
+    echo "OK: $name"
+  fi
+}
+
+check_cmd pnpm
+check_cmd tmux
+check_cmd node
+
+if [ ! -f "${DEVSERVER_CONFIG:-./devservers.json}" ]; then
+  echo "Config not found at ${DEVSERVER_CONFIG:-./devservers.json}"
+  missing=1
+else
+  echo "OK: config present"
+fi
+
+if [ "$missing" -eq 1 ]; then
+  echo "Doctor found issues."
+  exit 1
+fi
+
+echo "Doctor check passed."

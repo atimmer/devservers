@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "services": [
+    {
+      "name": "boodschappen-kosten",
+      "cwd": "/Users/anton/Code/boodschappen-kosten",
+      "command": "pnpm dev",
+      "port": 5173
+    }
+  ]
+}

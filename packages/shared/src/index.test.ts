@@ -1,0 +1,33 @@
+import { describe, expect, it } from "vitest";
+import { devServerConfigSchema, devServerServiceSchema } from "./index";
+
+describe("devServerServiceSchema", () => {
+  it("accepts valid service", () => {
+    const service = devServerServiceSchema.parse({
+      name: "api-service_1",
+      cwd: "/Users/anton/Code/api",
+      command: "pnpm dev",
+      env: { NODE_ENV: "development" },
+      port: 3000
+    });
+
+    expect(service.name).toBe("api-service_1");
+  });
+
+  it("rejects invalid name", () => {
+    const result = devServerServiceSchema.safeParse({
+      name: "api service",
+      cwd: "/Users/anton/Code/api",
+      command: "pnpm dev"
+    });
+
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("devServerConfigSchema", () => {
+  it("accepts empty config", () => {
+    const config = devServerConfigSchema.parse({ version: 1, services: [] });
+    expect(config.services).toHaveLength(0);
+  });
+});

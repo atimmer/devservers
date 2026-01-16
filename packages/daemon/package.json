@@ -1,0 +1,22 @@
+{
+  "name": "@webserver-manager/daemon",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsup",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src",
+    "format": "prettier --write src"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.2.0",
+    "@fastify/websocket": "^11.2.0",
+    "@webserver-manager/shared": "workspace:*",
+    "execa": "^9.6.1",
+    "fastify": "^5.7.1"
+  }
+}

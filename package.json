@@ -1,0 +1,34 @@
+{
+  "name": "webserver-manager",
+  "private": true,
+  "packageManager": "pnpm@10.28.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "bootstrap": "./scripts/bootstrap",
+    "dev": "pnpm -C apps/ui dev",
+    "dev:daemon": "pnpm -C packages/daemon dev",
+    "dev:cli": "pnpm -C packages/cli dev",
+    "doctor": "./scripts/doctor",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "format": "pnpm -r format",
+    "test": "vitest run",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.2",
+    "@types/node": "^24.10.9",
+    "eslint": "^9.39.2",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^16.5.0",
+    "prettier": "^3.8.0",
+    "tsup": "^8.5.1",
+    "tsx": "^4.21.0",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.53.0",
+    "vitest": "^3.2.4"
+  }
+}

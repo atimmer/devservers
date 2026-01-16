@@ -1,0 +1,54 @@
+import { describe, expect, it } from "vitest";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { readConfig, removeService, upsertService, writeConfig } from "./config.js";
+
+const createTempDir = async () => {
+  return await mkdtemp(path.join(tmpdir(), "devservers-"));
+};
+
+const sampleService = {
+  name: "api",
+  cwd: "/tmp/api",
+  command: "pnpm dev",
+  port: 3000
+};
+
+describe("config", () => {
+  it("returns empty config when file is missing", async () => {
+    const dir = await createTempDir();
+    const configPath = path.join(dir, "missing.json");
+    const config = await readConfig(configPath);
+    expect(config).toEqual({ version: 1, services: [] });
+  });
+
+  it("writes and reads config", async () => {
+    const dir = await createTempDir();
+    const configPath = path.join(dir, "devservers.json");
+    await writeConfig(configPath, { version: 1, services: [sampleService] });
+    const config = await readConfig(configPath);
+    expect(config.services).toHaveLength(1);
+    expect(config.services[0].name).toBe("api");
+  });
+
+  it("rejects duplicate services", async () => {
+    const dir = await createTempDir();
+    const configPath = path.join(dir, "devservers.json");
+    await expect(
+      writeConfig(configPath, { version: 1, services: [sampleService, sampleService] })
+    ).rejects.toThrow("Duplicate service name");
+  });
+
+  it("upserts and removes services", async () => {
+    const base = { version: 1 as const, services: [] };
+    const withService = upsertService(base, sampleService);
+    expect(withService.services).toHaveLength(1);
+
+    const updated = upsertService(withService, { ...sampleService, command: "pnpm dev -- --debug" });
+    expect(updated.services[0].command).toBe("pnpm dev -- --debug");
+
+    const removed = removeService(updated, "api");
+    expect(removed.services).toHaveLength(0);
+  });
+});

@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SESSION_NAME="devservers"
+DAEMON_WINDOW="manager-daemon"
+UI_WINDOW="manager-ui"
+
+DAEMON_CMD="pnpm -C packages/daemon dev"
+UI_CMD="pnpm -C apps/ui dev"
+
+RESTART=0
+
+for arg in "$@"; do
+  case "$arg" in
+    --restart)
+      RESTART=1
+      ;;
+    --help|-h)
+      echo "Usage: scripts/bootstrap [--restart]"
+      exit 0
+      ;;
+  esac
+done
+
+session_created=0
+if ! tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
+  tmux new-session -d -s "$SESSION_NAME" -n "$DAEMON_WINDOW" -c "$ROOT_DIR"
+  session_created=1
+fi
+
+window_exists() {
+  tmux list-windows -t "$SESSION_NAME" -F '#{window_name}' | grep -Fxq "$1"
+}
+
+start_window() {
+  local window_name="$1"
+  local command="$2"
+
+  if window_exists "$window_name"; then
+    if [ "$RESTART" -eq 1 ]; then
+      tmux kill-window -t "$SESSION_NAME:$window_name"
+    else
+      return 0
+    fi
+  fi
+
+  tmux new-window -d -t "$SESSION_NAME" -n "$window_name" -c "$ROOT_DIR"
+  tmux send-keys -t "$SESSION_NAME:$window_name" "$command" C-m
+}
+
+if [ "$session_created" -eq 1 ]; then
+  tmux send-keys -t "$SESSION_NAME:$DAEMON_WINDOW" "$DAEMON_CMD" C-m
+else
+  start_window "$DAEMON_WINDOW" "$DAEMON_CMD"
+fi
+
+start_window "$UI_WINDOW" "$UI_CMD"
+
+echo "Manager running in tmux session '$SESSION_NAME' (windows: $DAEMON_WINDOW, $UI_WINDOW)."
