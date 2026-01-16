@@ -4,6 +4,7 @@
 
 ### Fixed
 - GitHub Actions publish workflow no longer fails during Node setup by avoiding the pnpm cache hook.
+- Publish workflow now uses npm trusted publishing with provenance via OIDC.
 
 ## 0.1.1 - 2026-01-16
 

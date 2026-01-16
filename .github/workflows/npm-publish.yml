@@ -7,6 +7,7 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
+      id-token: write
       contents: read
     steps:
       - name: Checkout
@@ -24,6 +25,9 @@ jobs:
       - name: Activate pnpm
         run: corepack prepare pnpm@10.28.0 --activate
 
+      - name: Update npm
+        run: npm install -g npm@11.5.1
+
       - name: Install
         run: pnpm install --frozen-lockfile
 
@@ -40,16 +44,13 @@ jobs:
         run: pnpm run test
 
       - name: Publish shared
-        run: pnpm -C packages/shared publish --access public --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --provenance --access public --no-git-checks
+        working-directory: packages/shared
 
       - name: Publish daemon
-        run: pnpm -C packages/daemon publish --access public --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --provenance --access public --no-git-checks
+        working-directory: packages/daemon
 
       - name: Publish cli
-        run: pnpm -C packages/cli publish --access public --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --provenance --access public --no-git-checks
+        working-directory: packages/cli
