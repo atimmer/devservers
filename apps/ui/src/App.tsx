@@ -331,7 +331,19 @@ export default function App() {
                     </div>
                     <div className="text-xs text-slate-300">{service.cwd}</div>
                     <div className="flex flex-wrap gap-3 text-xs text-slate-400">
-                      {service.port ? <span>Port {service.port}</span> : <span>No port yet</span>}
+                      {service.portMode === "detect" ? (
+                        service.status === "running" ? (
+                          service.port ? (
+                            <span>Port {service.port}</span>
+                          ) : (
+                            <span>Port ....</span>
+                          )
+                        ) : null
+                      ) : service.port ? (
+                        <span>Port {service.port}</span>
+                      ) : (
+                        <span>No port yet</span>
+                      )}
                       <span>Mode {portModeLabels[service.portMode ?? "static"]}</span>
                       {service.env && Object.keys(service.env).length > 0 ? (
                         <span>{Object.keys(service.env).length} env vars</span>
