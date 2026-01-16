@@ -1,6 +1,6 @@
 ---
 name: devservers-register-service
-description: Register a dev server using the CLI. Use when an agent needs to add/update/remove a service entry (name, cwd, command, env, port).
+description: Register a dev server using the CLI. Use when an agent needs to add/update/remove a service entry (name, cwd, command, env, port, port mode).
 ---
 
 # Devservers Register Service
@@ -20,6 +20,7 @@ Collect:
 - `command` (shell command, e.g. `pnpm dev`)
 - optional `env` entries (`KEY=VALUE`)
 - optional `port`
+- optional `port mode` (`static`, `detect`, `registry`)
 
 Ask if the user wants the service started immediately.
 
@@ -33,10 +34,11 @@ devservers add \
   --cwd <absolute-path> \
   --command "<command>" \
   --port <port> \
+  --port-mode <mode> \
   --env KEY=VALUE
 ```
 
-- `--port` and `--env` are optional.
+- `--port`, `--port-mode`, and `--env` are optional.
 - Repeat `--env` for multiple vars.
 
 Verify:

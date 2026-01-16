@@ -12,7 +12,8 @@ const sampleService = {
   name: "api",
   cwd: "/tmp/api",
   command: "pnpm dev",
-  port: 3000
+  port: 3000,
+  portMode: "static"
 };
 
 describe("config", () => {

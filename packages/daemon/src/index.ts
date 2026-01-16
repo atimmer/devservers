@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import cors from "@fastify/cors";
 import fastifyStatic from "@fastify/static";
@@ -10,6 +11,7 @@ import {
   devServerServiceSchema,
   type DevServerConfig,
   type DevServerService,
+  type PortMode,
   type ServiceInfo
 } from "@atimmer/devservers-shared";
 import { readConfig, removeService, resolveConfigPath, upsertService, writeConfig } from "./config.js";
@@ -20,6 +22,12 @@ import {
   startWindow,
   stopWindow
 } from "./tmux.js";
+
+const DEFAULT_PORT_MODE: PortMode = "static";
+const PORT_LOG_LINES = 200;
+const PORT_DETECT_POLL_MS = 500;
+const PORT_DETECT_TIMEOUT_MS = 15000;
+const PORT_REGEX = /(?:https?:\/\/)?(?:localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0):(\d{2,5})/gi;
 
 const getArgValue = (flag: string) => {
   const index = process.argv.indexOf(flag);
@@ -111,6 +119,72 @@ const orderServices = (services: ServiceInfo[]) => {
   return scored.map(({ service }) => service);
 };
 
+const resolvePortMode = (service: DevServerService): PortMode => {
+  return service.portMode ?? DEFAULT_PORT_MODE;
+};
+
+const extractPortFromLogs = (logs: string): number | undefined => {
+  if (!logs) {
+    return undefined;
+  }
+
+  let latest: number | undefined;
+  const lines = logs.split("\n");
+  for (const line of lines) {
+    const lower = line.toLowerCase();
+    if (lower.includes("in use") || lower.includes("eaddrinuse")) {
+      continue;
+    }
+    PORT_REGEX.lastIndex = 0;
+    for (const match of line.matchAll(PORT_REGEX)) {
+      const port = Number(match[1]);
+      if (Number.isFinite(port) && port > 0 && port <= 65535) {
+        latest = port;
+      }
+    }
+  }
+
+  return latest;
+};
+
+const detectPortFromLogs = async (service: DevServerService, baseline: string) => {
+  const startedAt = Date.now();
+  let lastSnapshot = baseline;
+
+  while (Date.now() - startedAt < PORT_DETECT_TIMEOUT_MS) {
+    await delay(PORT_DETECT_POLL_MS);
+    const snapshot = await capturePane(service.name, PORT_LOG_LINES);
+    if (!snapshot || snapshot === lastSnapshot) {
+      continue;
+    }
+
+    const delta = snapshot.startsWith(lastSnapshot)
+      ? snapshot.slice(lastSnapshot.length)
+      : snapshot;
+    const detected = extractPortFromLogs(delta) ?? extractPortFromLogs(snapshot);
+    if (detected) {
+      return detected;
+    }
+
+    lastSnapshot = snapshot;
+  }
+
+  return undefined;
+};
+
+const persistDetectedPort = async (service: DevServerService, port: number) => {
+  const config = await readConfig(configPath);
+  const current = findService(config.services, service.name);
+  if (!current) {
+    return;
+  }
+  if (current.port === port) {
+    return;
+  }
+  const nextConfig = upsertService(config, { ...current, port });
+  await writeConfig(configPath, nextConfig);
+};
+
 const updateLastStartedAt = async (
   config: DevServerConfig,
   service: DevServerService,
@@ -166,9 +240,24 @@ server.post("/services/:name/start", async (request, reply) => {
   if (!service) {
     return reply.code(404).send({ error: "service not found" });
   }
+  const portMode = resolvePortMode(service);
+  const baseline =
+    portMode === "detect" ? await capturePane(service.name, PORT_LOG_LINES) : "";
   const started = await startWindow(service);
   if (started) {
     await updateLastStartedAt(config, service, new Date().toISOString());
+    if (portMode === "detect") {
+      void (async () => {
+        try {
+          const detectedPort = await detectPortFromLogs(service, baseline);
+          if (detectedPort) {
+            await persistDetectedPort(service, detectedPort);
+          }
+        } catch (error) {
+          request.log.error({ err: error }, "Failed to detect service port");
+        }
+      })();
+    }
   }
   return { ok: true };
 });
@@ -191,9 +280,24 @@ server.post("/services/:name/restart", async (request, reply) => {
   if (!service) {
     return reply.code(404).send({ error: "service not found" });
   }
+  const portMode = resolvePortMode(service);
+  const baseline =
+    portMode === "detect" ? await capturePane(service.name, PORT_LOG_LINES) : "";
   const started = await restartWindow(service);
   if (started) {
     await updateLastStartedAt(config, service, new Date().toISOString());
+    if (portMode === "detect") {
+      void (async () => {
+        try {
+          const detectedPort = await detectPortFromLogs(service, baseline);
+          if (detectedPort) {
+            await persistDetectedPort(service, detectedPort);
+          }
+        } catch (error) {
+          request.log.error({ err: error }, "Failed to detect service port");
+        }
+      })();
+    }
   }
   return { ok: true };
 });
@@ -206,13 +310,31 @@ server.get("/services/:name/logs", { websocket: true }, (connection, request) =>
     Number.isFinite(requestedLines) && requestedLines > 0 ? Math.trunc(requestedLines) : 200;
   let closed = false;
 
+  const socket =
+    typeof (connection as { send?: unknown })?.send === "function"
+      ? (connection as {
+          send: (data: string) => void;
+          on: (event: string, handler: (...args: unknown[]) => void) => void;
+        })
+      : (connection as {
+          socket?: {
+            send: (data: string) => void;
+            on: (event: string, handler: (...args: unknown[]) => void) => void;
+          };
+        })?.socket;
+
+  if (!socket) {
+    request.log.error("Logs websocket missing socket handle");
+    return;
+  }
+
   const sendLogs = async () => {
     if (closed) {
       return;
     }
     try {
       const payload = await capturePane(params.name, lines);
-      connection.socket.send(JSON.stringify({ type: "logs", payload }));
+      socket.send(JSON.stringify({ type: "logs", payload }));
     } catch (error) {
       request.log.error({ err: error }, "Failed to capture logs");
     }
@@ -223,11 +345,11 @@ server.get("/services/:name/logs", { websocket: true }, (connection, request) =>
   }, 1000);
   void sendLogs();
 
-  connection.socket.on("error", (error) => {
+  socket.on("error", (error) => {
     request.log.error({ err: error }, "Logs websocket error");
   });
 
-  connection.socket.on("close", () => {
+  socket.on("close", () => {
     closed = true;
     clearInterval(interval);
   });

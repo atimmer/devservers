@@ -18,6 +18,15 @@ const statusStyles: Record<ServiceStatus, string> = {
 };
 
 const TMUX_SESSION = "devservers";
+const buildServiceUrl = (service: ServiceInfo) => {
+  if (!service.port) {
+    return null;
+  }
+  const hostname = typeof window === "undefined" ? "localhost" : window.location.hostname;
+  const protocol = typeof window === "undefined" ? "http:" : window.location.protocol;
+  const scheme = protocol === "https:" ? "https:" : "http:";
+  return `${scheme}//${hostname}:${service.port}`;
+};
 const portModeLabels: Record<PortMode, string> = {
   static: "Static",
   detect: "Detect from logs",
@@ -314,6 +323,21 @@ export default function App() {
                       variant="restart"
                       onClick={() => handleAction("restart", service.name)}
                     />
+                    {service.status === "running" && service.port ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const url = buildServiceUrl(service);
+                          if (!url) {
+                            return;
+                          }
+                          window.open(url, "_blank", "noopener,noreferrer");
+                        }}
+                        className="rounded-full border border-white/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:border-white/60"
+                      >
+                        Open
+                      </button>
+                    ) : null}
                     {service.status === "stopped" ? null : (
                       <ActionButton
                         label="Stop"

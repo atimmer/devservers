@@ -320,6 +320,7 @@ program
   .requiredOption("--cwd <path>")
   .requiredOption("--command <command>")
   .option("--port <port>")
+  .option("--port-mode <mode>", "port mode (static|detect|registry)")
   .option("--env <entry...>", "Environment variables (KEY=VALUE)")
   .action(async (options) => {
     const programOptions = program.opts<{ config?: string }>();
@@ -329,6 +330,7 @@ program
       cwd: options.cwd,
       command: options.command,
       port: options.port ? Number(options.port) : undefined,
+      portMode: options.portMode,
       env: parseEnvVars(options.env)
     });
 

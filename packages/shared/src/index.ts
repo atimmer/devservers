@@ -5,6 +5,8 @@ export const DEFAULT_CONFIG_FILENAME = "devservers.json";
 export const DAEMON_PORT = 4141;
 
 const namePattern = /^[a-zA-Z0-9._-]+$/;
+export const portModeSchema = z.enum(["static", "detect", "registry"]);
+export type PortMode = z.infer<typeof portModeSchema>;
 
 export const devServerServiceSchema = z.object({
   name: z
@@ -15,6 +17,7 @@ export const devServerServiceSchema = z.object({
   command: z.string().min(1),
   env: z.record(z.string(), z.string()).optional(),
   port: z.number().int().positive().optional(),
+  portMode: portModeSchema.optional(),
   lastStartedAt: z.string().datetime().optional()
 });
 

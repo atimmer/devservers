@@ -1,4 +1,5 @@
 export type ServiceStatus = "stopped" | "running" | "error";
+export type PortMode = "static" | "detect" | "registry";
 
 export type ServiceInfo = {
   name: string;
@@ -6,6 +7,7 @@ export type ServiceInfo = {
   command: string;
   env?: Record<string, string>;
   port?: number;
+  portMode?: PortMode;
   lastStartedAt?: string;
   status: ServiceStatus;
   message?: string;

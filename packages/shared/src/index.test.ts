@@ -8,7 +8,8 @@ describe("devServerServiceSchema", () => {
       cwd: "/Users/anton/Code/api",
       command: "pnpm dev",
       env: { NODE_ENV: "development" },
-      port: 3000
+      port: 3000,
+      portMode: "static"
     });
 
     expect(service.name).toBe("api-service_1");
@@ -34,6 +35,17 @@ describe("devServerServiceSchema", () => {
     });
 
     expect(service.lastStartedAt).toBe(timestamp);
+  });
+
+  it("accepts valid port mode", () => {
+    const service = devServerServiceSchema.parse({
+      name: "api-service_2",
+      cwd: "/Users/anton/Code/api",
+      command: "pnpm dev",
+      portMode: "detect"
+    });
+
+    expect(service.portMode).toBe("detect");
   });
 });
 
