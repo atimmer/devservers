@@ -2,7 +2,7 @@
 
 Fastify daemon that manages tmux windows and serves the Devservers Manager UI.
 
-Typically installed as a dependency of `@atimmer/devservers`.
+Typically installed as a dependency of `@24letters/devservers`.
 
 Manual start (advanced):
 

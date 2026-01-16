@@ -13,7 +13,7 @@ import {
   type DevServerService,
   type PortMode,
   type ServiceInfo
-} from "@atimmer/devservers-shared";
+} from "@24letters/devservers-shared";
 import { readConfig, removeService, resolveConfigPath, upsertService, writeConfig } from "./config.js";
 import {
   capturePane,

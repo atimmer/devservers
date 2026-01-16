@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { DevServerService } from "@atimmer/devservers-shared";
+import type { DevServerService } from "@24letters/devservers-shared";
 import { readConfig, removeService, upsertService, writeConfig } from "./config.js";
 
 const createTempDir = async () => {

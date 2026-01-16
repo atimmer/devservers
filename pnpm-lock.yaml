@@ -102,10 +102,10 @@ importers:
 
   packages/cli:
     dependencies:
-      '@atimmer/devservers-daemon':
+      '@24letters/devservers-daemon':
         specifier: workspace:*
         version: link:../daemon
-      '@atimmer/devservers-shared':
+      '@24letters/devservers-shared':
         specifier: workspace:*
         version: link:../shared
       commander:
@@ -114,7 +114,7 @@ importers:
 
   packages/daemon:
     dependencies:
-      '@atimmer/devservers-shared':
+      '@24letters/devservers-shared':
         specifier: workspace:*
         version: link:../shared
       '@fastify/cors':

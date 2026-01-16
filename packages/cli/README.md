@@ -3,7 +3,7 @@
 Install:
 
 ```
-pnpm add -g @atimmer/devservers
+pnpm add -g @24letters/devservers
 ```
 
 Start the manager (daemon + UI):

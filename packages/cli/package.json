@@ -1,5 +1,5 @@
 {
-  "name": "@atimmer/devservers",
+  "name": "@24letters/devservers",
   "version": "0.1.0",
   "type": "module",
   "description": "Local dev server manager CLI for macOS.",
@@ -47,8 +47,8 @@
     "format": "prettier --write src"
   },
   "dependencies": {
-    "@atimmer/devservers-daemon": "workspace:*",
-    "@atimmer/devservers-shared": "workspace:*",
+    "@24letters/devservers-daemon": "workspace:*",
+    "@24letters/devservers-shared": "workspace:*",
     "commander": "^14.0.2"
   }
 }

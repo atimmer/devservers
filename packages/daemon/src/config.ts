@@ -7,7 +7,7 @@ import {
   devServerConfigSchema,
   type DevServerConfig,
   type DevServerService
-} from "@atimmer/devservers-shared";
+} from "@24letters/devservers-shared";
 
 const defaultConfigPath = () => {
   const home = os.homedir();

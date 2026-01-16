@@ -18,7 +18,7 @@ There are also some niceties like an "Open" button to open your local URL and lo
 ## Install (recommended)
 
 ```
-pnpm add -g @atimmer/devservers
+pnpm add -g @24letters/devservers
 ```
 
 ## Quickstart

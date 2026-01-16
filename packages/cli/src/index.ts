@@ -14,7 +14,7 @@ import {
   devServerServiceSchema,
   type DevServerConfig,
   type DevServerService
-} from "@atimmer/devservers-shared";
+} from "@24letters/devservers-shared";
 
 const defaultConfigPath = () => {
   const home = os.homedir();
@@ -117,7 +117,7 @@ const callDaemon = async (baseUrl: string, pathName: string, method: string) => 
 };
 
 const require = createRequire(import.meta.url);
-const daemonEntry = require.resolve("@atimmer/devservers-daemon");
+const daemonEntry = require.resolve("@24letters/devservers-daemon");
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const skillsRoot = path.join(packageRoot, "skills");
 

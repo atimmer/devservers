@@ -7,7 +7,7 @@
     "types": ["node"],
     "baseUrl": ".",
     "paths": {
-      "@atimmer/devservers-shared": ["../shared/src/index.ts"]
+      "@24letters/devservers-shared": ["../shared/src/index.ts"]
     }
   },
   "include": ["src"]
