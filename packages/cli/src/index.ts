@@ -1,6 +1,9 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import { access, cp, mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import {
   CONFIG_ENV_VAR,
@@ -108,6 +111,74 @@ const callDaemon = async (baseUrl: string, pathName: string, method: string) => 
   }
 };
 
+const require = createRequire(import.meta.url);
+const daemonEntry = require.resolve("@atimmer/devservers-daemon");
+const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const skillsRoot = path.join(packageRoot, "skills");
+
+const pathExists = async (target: string) => {
+  try {
+    await access(target);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const shellQuote = (value: string) => `'${value.replace(/'/g, "'\\''")}'`;
+
+const runTmux = (args: string[], allowFailure = false) => {
+  const result = spawnSync("tmux", args, { encoding: "utf-8" });
+  if (result.error) {
+    const error = result.error as NodeJS.ErrnoException;
+    if (error.code === "ENOENT") {
+      throw new Error("tmux is required. Install it first and retry.");
+    }
+    throw error;
+  }
+  if (result.status !== 0 && !allowFailure) {
+    throw new Error(result.stderr?.trim() || `tmux ${args.join(" ")} failed`);
+  }
+  return result;
+};
+
+const tmuxSessionExists = (session: string) => {
+  return runTmux(["has-session", "-t", session], true).status === 0;
+};
+
+const tmuxWindowNames = (session: string) => {
+  const result = runTmux(["list-windows", "-t", session, "-F", "#{window_name}"], true);
+  if (result.status !== 0 || !result.stdout) {
+    return [];
+  }
+  return result.stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+};
+
+const tmuxWindowExists = (session: string, windowName: string) => {
+  return tmuxWindowNames(session).includes(windowName);
+};
+
+const tmuxStartWindow = (
+  session: string,
+  windowName: string,
+  command: string,
+  cwd: string,
+  restart: boolean
+) => {
+  if (tmuxWindowExists(session, windowName)) {
+    if (!restart) {
+      return;
+    }
+    runTmux(["kill-window", "-t", `${session}:${windowName}`]);
+  }
+
+  runTmux(["new-window", "-d", "-t", session, "-n", windowName, "-c", cwd]);
+  runTmux(["send-keys", "-t", `${session}:${windowName}`, command, "C-m"]);
+};
+
 const program = new Command();
 program
   .name("devservers")
@@ -182,6 +253,96 @@ program
     const nextConfig = removeService(config, name);
     await writeConfig(configPath, nextConfig);
     console.log(`Removed ${name}`);
+  });
+
+program
+  .command("bootstrap")
+  .description("Start the manager daemon in tmux and serve the UI")
+  .option("--config <path>", "config path")
+  .option("--port <port>", "daemon port", String(DAEMON_PORT))
+  .option("--restart", "restart the manager daemon window", false)
+  .action(async (options) => {
+    const globalOptions = program.opts<{ config?: string }>();
+    const configPath = resolveConfigPath(options.config ?? globalOptions.config);
+    const port = Number(options.port ?? DAEMON_PORT);
+    if (!Number.isFinite(port)) {
+      throw new Error(`Invalid port: ${options.port}`);
+    }
+
+    const session = "devservers";
+    const daemonWindow = "manager-daemon";
+    const cwd = process.cwd();
+    if (!(await pathExists(daemonEntry))) {
+      throw new Error(
+        "Daemon build not found. Run `pnpm -C packages/daemon build` (or `pnpm -r build`) before bootstrapping."
+      );
+    }
+    const daemonCommand = [
+      shellQuote(process.execPath),
+      shellQuote(daemonEntry),
+      "--config",
+      shellQuote(configPath),
+      "--port",
+      shellQuote(String(port))
+    ].join(" ");
+
+    if (!tmuxSessionExists(session)) {
+      runTmux(["new-session", "-d", "-s", session, "-n", daemonWindow, "-c", cwd]);
+      runTmux(["send-keys", "-t", `${session}:${daemonWindow}`, daemonCommand, "C-m"]);
+    } else {
+      tmuxStartWindow(session, daemonWindow, daemonCommand, cwd, Boolean(options.restart));
+    }
+
+    console.log(`Manager running in tmux session '${session}'.`);
+    console.log(`UI: http://127.0.0.1:${port}/ui/`);
+    console.log(`Attach: tmux attach -t ${session}`);
+  });
+
+program
+  .command("install-skill")
+  .description("Install Devservers Manager Codex skills")
+  .argument("[name]", "skill name (default: install all)")
+  .option("--dest <path>", "skills directory")
+  .option("--dry-run", "show what would be installed", false)
+  .option("--force", "overwrite existing skills", false)
+  .action(async (name: string | undefined, options) => {
+    if (!(await pathExists(skillsRoot))) {
+      throw new Error(`Skills directory not found at ${skillsRoot}`);
+    }
+
+    const entries = await readdir(skillsRoot, { withFileTypes: true });
+    const available = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+    const targets = name ? [name] : available;
+
+    if (name && !available.includes(name)) {
+      throw new Error(`Unknown skill '${name}'. Available: ${available.sort().join(", ")}`);
+    }
+
+    const codexHome = process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex");
+    const destRoot = path.resolve(options.dest ?? path.join(codexHome, "skills"));
+
+    if (options.dryRun) {
+      console.log(`Would install: ${targets.sort().join(", ")}`);
+      console.log(`Destination: ${destRoot}`);
+      return;
+    }
+
+    await mkdir(destRoot, { recursive: true });
+
+    for (const skillName of targets) {
+      const src = path.join(skillsRoot, skillName);
+      const dest = path.join(destRoot, skillName);
+      const srcStat = await stat(src);
+      if (!srcStat.isDirectory()) {
+        continue;
+      }
+      if ((await pathExists(dest)) && !options.force) {
+        console.log(`Skipping ${skillName} (already exists). Use --force to overwrite.`);
+        continue;
+      }
+      await cp(src, dest, { recursive: true });
+      console.log(`Installed ${skillName}`);
+    }
   });
 
 const daemonCommand = (

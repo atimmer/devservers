@@ -34,7 +34,7 @@ const port = Number(getArgValue("--port") ?? DAEMON_PORT);
 const server = Fastify({ logger: true });
 
 await server.register(cors, {
-  origin: [/^http:\/\/localhost:\d+$/]
+  origin: [/^http:\/\/localhost:\d+$/, /^http:\/\/127\.0\.0\.1:\d+$/, /^http:\/\/\[::1\]:\d+$/]
 });
 
 await server.register(websocket);

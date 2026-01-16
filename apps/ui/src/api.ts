@@ -10,7 +10,12 @@ export type ServiceInfo = {
   message?: string;
 };
 
-const API_BASE = import.meta.env.VITE_DAEMON_URL ?? "http://127.0.0.1:4141";
+const DEFAULT_DAEMON_URL = "http://127.0.0.1:4141";
+const API_BASE =
+  import.meta.env.VITE_DAEMON_URL ??
+  (import.meta.env.DEV || typeof window === "undefined"
+    ? DEFAULT_DAEMON_URL
+    : window.location.origin);
 const WS_BASE = API_BASE.replace(/^http/, "ws");
 
 export const getServices = async (): Promise<ServiceInfo[]> => {
