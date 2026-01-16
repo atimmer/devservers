@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addService,
   createLogsSocket,
@@ -15,6 +15,8 @@ const statusStyles: Record<ServiceStatus, string> = {
   stopped: "bg-slate-400/10 text-slate-300 border-slate-400/20",
   error: "bg-rose-400/15 text-rose-200 border-rose-400/30"
 };
+
+const TMUX_SESSION = "devservers";
 
 const parseEnv = (value: string) => {
   const entries = value
@@ -76,6 +78,9 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [activeLogService, setActiveLogService] = useState<ServiceInfo | null>(null);
   const [logs, setLogs] = useState("");
+  const [copied, setCopied] = useState(false);
+  const logsRef = useRef<HTMLPreElement | null>(null);
+  const shouldScrollRef = useRef(false);
   const [showForm, setShowForm] = useState(false);
   const [formState, setFormState] = useState({
     name: "",
@@ -106,9 +111,13 @@ export default function App() {
   useEffect(() => {
     if (!activeLogService) {
       setLogs("");
+      setCopied(false);
+      shouldScrollRef.current = false;
       return;
     }
 
+    setLogs("");
+    shouldScrollRef.current = true;
     const socket = createLogsSocket(activeLogService.name, 200);
     socket.onmessage = (event) => {
       try {
@@ -125,6 +134,20 @@ export default function App() {
     };
     return () => socket.close();
   }, [activeLogService]);
+
+  useEffect(() => {
+    if (!activeLogService || !shouldScrollRef.current || logs.length === 0) {
+      return;
+    }
+    const raf = requestAnimationFrame(() => {
+      const container = logsRef.current;
+      if (container) {
+        container.scrollTop = container.scrollHeight;
+      }
+      shouldScrollRef.current = false;
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [activeLogService, logs]);
 
   const handleAction = useCallback(
     async (action: "start" | "stop" | "restart", name: string) => {
@@ -261,21 +284,25 @@ export default function App() {
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-3">
-                    <ActionButton
-                      label="Start"
-                      variant="start"
-                      onClick={() => handleAction("start", service.name)}
-                    />
+                    {service.status === "running" ? null : (
+                      <ActionButton
+                        label="Start"
+                        variant="start"
+                        onClick={() => handleAction("start", service.name)}
+                      />
+                    )}
                     <ActionButton
                       label="Restart"
                       variant="restart"
                       onClick={() => handleAction("restart", service.name)}
                     />
-                    <ActionButton
-                      label="Stop"
-                      variant="stop"
-                      onClick={() => handleAction("stop", service.name)}
-                    />
+                    {service.status === "stopped" ? null : (
+                      <ActionButton
+                        label="Stop"
+                        variant="stop"
+                        onClick={() => handleAction("stop", service.name)}
+                      />
+                    )}
                     <button
                       type="button"
                       onClick={() => setActiveLogService(service)}
@@ -307,7 +334,31 @@ export default function App() {
                 Close
               </button>
             </div>
-            <pre className="mt-4 max-h-[50vh] overflow-auto rounded-2xl border border-white/10 bg-black/40 p-4 text-xs text-slate-200">
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-xs text-slate-200">
+              <code className="break-all text-[11px] text-slate-200">
+                tmux attach -r -t {TMUX_SESSION}:{activeLogService.name}
+              </code>
+              <button
+                type="button"
+                onClick={async () => {
+                  const command = `tmux attach -r -t ${TMUX_SESSION}:${activeLogService.name}`;
+                  try {
+                    await navigator.clipboard.writeText(command);
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 1500);
+                  } catch {
+                    setCopied(false);
+                  }
+                }}
+                className="rounded-full border border-white/20 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-white transition hover:border-white/60"
+              >
+                {copied ? "Copied" : "Copy"}
+              </button>
+            </div>
+            <pre
+              ref={logsRef}
+              className="mt-4 max-h-[50vh] overflow-auto rounded-2xl border border-white/10 bg-black/40 p-4 text-xs text-slate-200"
+            >
               {logs || "Waiting for logs..."}
             </pre>
           </div>
