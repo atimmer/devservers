@@ -14,7 +14,8 @@ export const devServerServiceSchema = z.object({
   cwd: z.string().min(1),
   command: z.string().min(1),
   env: z.record(z.string(), z.string()).optional(),
-  port: z.number().int().positive().optional()
+  port: z.number().int().positive().optional(),
+  lastStartedAt: z.string().datetime().optional()
 });
 
 export const devServerConfigSchema = z.object({

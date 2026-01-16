@@ -47,3 +47,4 @@ The repo ships a sample `devservers.json` for development; pass `--config ./devs
 - `command` (string, required): shell command to run.
 - `env` (object, optional): environment variables injected before command.
 - `port` (number, optional): display-only metadata.
+- `lastStartedAt` (string, optional): ISO timestamp of the last successful start (managed by the daemon).

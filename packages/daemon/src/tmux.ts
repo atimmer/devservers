@@ -73,7 +73,7 @@ const isPaneIdle = async (windowName: string) => {
   return IDLE_COMMANDS.has(command);
 };
 
-export const startWindow = async (service: DevServerService) => {
+export const startWindow = async (service: DevServerService): Promise<boolean> => {
   await ensureSession();
   const exists = await windowExists(service.name);
   const command = buildCommand(service);
@@ -90,13 +90,16 @@ export const startWindow = async (service: DevServerService) => {
       service.cwd
     ]);
     await runTmux(["send-keys", "-t", `${SESSION_NAME}:${service.name}`, command, "C-m"]);
-    return;
+    return true;
   }
 
   const idle = await isPaneIdle(service.name);
   if (idle) {
     await runTmux(["send-keys", "-t", `${SESSION_NAME}:${service.name}`, command, "C-m"]);
+    return true;
   }
+
+  return false;
 };
 
 export const stopWindow = async (windowName: string) => {
@@ -107,10 +110,10 @@ export const stopWindow = async (windowName: string) => {
   await runTmux(["send-keys", "-t", `${SESSION_NAME}:${windowName}`, "C-c"]);
 };
 
-export const restartWindow = async (service: DevServerService) => {
+export const restartWindow = async (service: DevServerService): Promise<boolean> => {
   await stopWindow(service.name);
   await delay(300);
-  await startWindow(service);
+  return await startWindow(service);
 };
 
 export const isPaneDead = async (windowName: string) => {
@@ -154,6 +157,11 @@ export const getServiceStatus = async (service: DevServerService): Promise<Servi
   const dead = await isPaneDead(service.name);
   if (dead) {
     return "error";
+  }
+
+  const idle = await isPaneIdle(service.name);
+  if (idle) {
+    return "stopped";
   }
 
   return "running";

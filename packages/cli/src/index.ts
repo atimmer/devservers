@@ -80,7 +80,11 @@ const upsertService = (
   }
 
   const updated = [...config.services];
-  updated[existingIndex] = service;
+  const existing = config.services[existingIndex];
+  updated[existingIndex] = {
+    ...service,
+    lastStartedAt: service.lastStartedAt ?? existing.lastStartedAt
+  };
   return { ...config, services: updated };
 };
 

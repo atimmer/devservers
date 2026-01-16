@@ -6,6 +6,7 @@ export type ServiceInfo = {
   command: string;
   env?: Record<string, string>;
   port?: number;
+  lastStartedAt?: string;
   status: ServiceStatus;
   message?: string;
 };

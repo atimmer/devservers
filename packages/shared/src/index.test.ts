@@ -23,6 +23,18 @@ describe("devServerServiceSchema", () => {
 
     expect(result.success).toBe(false);
   });
+
+  it("accepts lastStartedAt timestamp", () => {
+    const timestamp = new Date().toISOString();
+    const service = devServerServiceSchema.parse({
+      name: "api-service_1",
+      cwd: "/Users/anton/Code/api",
+      command: "pnpm dev",
+      lastStartedAt: timestamp
+    });
+
+    expect(service.lastStartedAt).toBe(timestamp);
+  });
 });
 
 describe("devServerConfigSchema", () => {

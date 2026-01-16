@@ -8,6 +8,7 @@ import Fastify from "fastify";
 import {
   DAEMON_PORT,
   devServerServiceSchema,
+  type DevServerConfig,
   type DevServerService,
   type ServiceInfo
 } from "@atimmer/devservers-shared";
@@ -59,11 +60,50 @@ const listServices = async (): Promise<ServiceInfo[]> => {
       status: await getServiceStatus(service)
     }))
   );
-  return statuses;
+  return orderServices(statuses);
 };
 
 const findService = (services: DevServerService[], name: string) => {
   return services.find((service) => service.name === name);
+};
+
+const orderServices = (services: ServiceInfo[]) => {
+  const scored = services.map((service, index) => ({ service, index }));
+  const scoreLastStartedAt = (service: ServiceInfo) => {
+    if (!service.lastStartedAt) {
+      return 0;
+    }
+    const parsed = Date.parse(service.lastStartedAt);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  scored.sort((left, right) => {
+    const leftRunning = left.service.status === "running";
+    const rightRunning = right.service.status === "running";
+    if (leftRunning !== rightRunning) {
+      return leftRunning ? -1 : 1;
+    }
+
+    if (!leftRunning) {
+      const timeDelta = scoreLastStartedAt(right.service) - scoreLastStartedAt(left.service);
+      if (timeDelta !== 0) {
+        return timeDelta;
+      }
+    }
+
+    return left.index - right.index;
+  });
+
+  return scored.map(({ service }) => service);
+};
+
+const updateLastStartedAt = async (
+  config: DevServerConfig,
+  service: DevServerService,
+  lastStartedAt: string
+) => {
+  const nextConfig = upsertService(config, { ...service, lastStartedAt });
+  await writeConfig(configPath, nextConfig);
 };
 
 server.get("/services", async () => ({ services: await listServices() }));
@@ -112,7 +152,10 @@ server.post("/services/:name/start", async (request, reply) => {
   if (!service) {
     return reply.code(404).send({ error: "service not found" });
   }
-  await startWindow(service);
+  const started = await startWindow(service);
+  if (started) {
+    await updateLastStartedAt(config, service, new Date().toISOString());
+  }
   return { ok: true };
 });
 
@@ -134,7 +177,10 @@ server.post("/services/:name/restart", async (request, reply) => {
   if (!service) {
     return reply.code(404).send({ error: "service not found" });
   }
-  await restartWindow(service);
+  const started = await restartWindow(service);
+  if (started) {
+    await updateLastStartedAt(config, service, new Date().toISOString());
+  }
   return { ok: true };
 });
 
