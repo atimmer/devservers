@@ -1,8 +1,28 @@
 # Bootstrap
 
-The manager itself (daemon + UI) runs inside the same tmux session used for services.
+The manager runs inside the same tmux session used for services.
 
-## Start
+## Installable (CLI)
+
+Start the daemon in tmux and serve the UI from the daemon:
+
+```
+devservers bootstrap
+```
+
+Open the UI at:
+
+```
+http://127.0.0.1:4141/ui/
+```
+
+Restart the daemon window:
+
+```
+devservers bootstrap --restart
+```
+
+## From source (dev)
 
 ```
 pnpm run bootstrap
@@ -10,15 +30,13 @@ pnpm run bootstrap
 
 Creates tmux session `devservers` with windows:
 - `manager-daemon`
-- `manager-ui`
+- `manager-ui` (Vite dev server)
 
-## Restart
+Restart dev windows:
 
 ```
 ./scripts/bootstrap --restart
 ```
-
-This kills and recreates the manager windows while leaving service windows intact.
 
 ## Attach
 

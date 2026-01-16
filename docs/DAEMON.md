@@ -2,6 +2,8 @@
 
 Fastify server that manages tmux windows and exposes REST + WebSocket APIs.
 
+When UI assets are bundled, the daemon serves the UI at `/ui/` and redirects `/` → `/ui/`.
+
 ## Endpoints
 
 - `GET /services` → `{ services: ServiceInfo[] }`

@@ -8,7 +8,7 @@
 
 ## UI shows no services
 
-- Confirm `devservers.json` exists and is valid JSON.
+- Confirm the config file exists and is valid JSON.
 - Confirm `DEVSERVER_CONFIG` is not pointing elsewhere.
 - Run `curl http://127.0.0.1:4141/services` to verify daemon.
 

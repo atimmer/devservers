@@ -1,10 +1,28 @@
 # Config
 
-Default file: `devservers.json` in repo root.
+Default file (macOS):
+
+```
+~/Library/Application Support/Devservers Manager/devservers.json
+```
+
+Default file (Linux):
+
+```
+~/.config/devservers/devservers.json
+```
+
+Default file (Windows):
+
+```
+%APPDATA%\\Devservers Manager\\devservers.json
+```
 
 Override with:
 - CLI/daemon `--config /path/to/file.json`
 - env `DEVSERVER_CONFIG=/path/to/file.json`
+
+The repo ships a sample `devservers.json` for development; pass `--config ./devservers.json` to use it.
 
 ## Schema
 

@@ -5,100 +5,88 @@ Local dev server manager for macOS. Runs every service inside a single tmux sess
 ## Requirements
 
 - macOS
-- `pnpm`
 - `tmux`
 - Node.js 20+
+- `pnpm`
 
-## Install
-
-```
-pnpm install
-```
-
-## Bootstrap (manager UI + daemon)
-
-The manager itself runs inside the same tmux session (`devservers`) that hosts your dev servers.
+## Install (recommended)
 
 ```
-pnpm run bootstrap
+pnpm add -g @atimmer/devservers
 ```
 
-This creates two tmux windows:
-- `manager-daemon` (Fastify daemon)
-- `manager-ui` (React UI)
+## Quickstart
 
-Attach to the session to view logs:
+Bootstrap the manager (daemon + UI):
 
 ```
-tmux attach -t devservers
+devservers bootstrap
 ```
 
-### Restarting the manager
-
-Because the manager runs in tmux, restart it by either:
+Open the UI:
 
 ```
-scripts/bootstrap --restart
+http://127.0.0.1:4141/ui/
 ```
 
-or by killing the windows and re-running bootstrap:
+Add a service:
 
 ```
-tmux kill-window -t devservers:manager-daemon
-
-tmux kill-window -t devservers:manager-ui
-
-scripts/bootstrap
+devservers add --name api --cwd /Users/you/Code/api --command "pnpm dev" --port 3000
 ```
 
-## Config
-
-Default config file: `devservers.json` in repo root.
-Override with:
-- `--config <path>` on CLI or daemon
-- `DEVSERVER_CONFIG=/path/to/devservers.json`
-
-Schema:
-
-```json
-{
-  "version": 1,
-  "services": [
-    {
-      "name": "api",
-      "cwd": "/Users/anton/Code/api",
-      "command": "pnpm dev",
-      "env": { "NODE_ENV": "development" },
-      "port": 3000
-    }
-  ]
-}
-```
-
-## CLI
-
-The CLI binary is `devservers` (built from `packages/cli`). Common commands:
+Start/stop/restart:
 
 ```
-devservers list
-
-devservers add --name api --cwd /Users/anton/Code/api --command "pnpm dev" --port 3000
-
 devservers start api
 
 devservers stop api
 
 devservers restart api
-
-devservers status
 ```
 
-## UI
+## Config
 
-The UI polls the daemon and only streams logs when you open the log drawer for a service. Override daemon URL:
+Default config path (macOS):
 
 ```
-VITE_DAEMON_URL=http://127.0.0.1:4141
+~/Library/Application Support/Devservers Manager/devservers.json
+```
+
+Override with:
+- `--config /path/to/devservers.json` (CLI or daemon)
+- `DEVSERVER_CONFIG=/path/to/devservers.json`
+
+## Skills (Codex)
+
+Install all bundled skills:
+
+```
+devservers install-skill
+```
+
+Install a single skill:
+
+```
+devservers install-skill devservers-register-service
+```
+
+Set a custom skills directory:
+
+```
+CODEX_HOME=/path/to/codex devservers install-skill
+```
+
+## From source (development)
+
+```
+pnpm install
+```
+
+Start the dev daemon + UI (Vite):
+
+```
+pnpm run bootstrap
 ```
 
 ## Docs
@@ -110,17 +98,6 @@ VITE_DAEMON_URL=http://127.0.0.1:4141
 - `docs/ARCHITECTURE.md`
 - `docs/TROUBLESHOOTING.md`
 
-## Scripts
+## License
 
-- `pnpm run bootstrap` - start manager in tmux
-- `pnpm run dev` - run UI only
-- `pnpm run dev:daemon` - run daemon only
-- `pnpm run dev:cli` - run CLI in watch mode
-- `pnpm run doctor` - check system prerequisites
-- `pnpm run test` - run unit tests
-
-## Notes
-
-- All services are grouped under the `devservers` tmux session.
-- One tmux window per service.
-- `start` uses tmux `send-keys` and `stop` sends `Ctrl+C`.
+MIT
