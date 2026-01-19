@@ -138,7 +138,11 @@ const resolveAgentHome = (agentInput?: string) => {
   return path.join(os.homedir(), `.${normalized}`);
 };
 
-const IDLE_COMMANDS = new Set(["zsh", "bash", "sh", "fish"]);
+const IDLE_COMMANDS = new Set(["zsh", "bash", "sh", "fish", "nu", "elvish", "xonsh", "login"]);
+const userShell = process.env["SHELL"] ? path.basename(process.env["SHELL"]) : "";
+if (userShell) {
+  IDLE_COMMANDS.add(userShell);
+}
 
 const pathExists = async (target: string) => {
   try {
@@ -207,10 +211,11 @@ const tmuxStartWindow = (
   cwd: string,
   restart: boolean
 ) => {
+  const commandWithCwd = `cd ${shellQuote(cwd)} && ${command}`;
   if (tmuxWindowExists(session, windowName)) {
     if (!restart) {
       if (tmuxPaneIdle(session, windowName)) {
-        runTmux(["send-keys", "-t", `${session}:${windowName}`, command, "C-m"]);
+        runTmux(["send-keys", "-t", `${session}:${windowName}`, commandWithCwd, "C-m"]);
       }
       return;
     }
@@ -218,7 +223,7 @@ const tmuxStartWindow = (
   }
 
   runTmux(["new-window", "-d", "-t", session, "-n", windowName, "-c", cwd]);
-  runTmux(["send-keys", "-t", `${session}:${windowName}`, command, "C-m"]);
+  runTmux(["send-keys", "-t", `${session}:${windowName}`, commandWithCwd, "C-m"]);
 };
 
 const buildDaemonCommand = (configPath: string, port: number) => {
@@ -385,10 +390,20 @@ program
     }
 
     const session = "devservers";
-    await startDaemonWindow(configPath, port, Boolean(options.restart));
+    const baseUrl = `http://127.0.0.1:${port}`;
+
+    if (options.restart) {
+      await startDaemonWindow(configPath, port, true);
+      const ready = await waitForDaemon(baseUrl);
+      if (!ready) {
+        throw new Error("Daemon failed to start. Run `devservers bootstrap` to inspect.");
+      }
+    } else {
+      await ensureDaemonRunning(baseUrl, configPath);
+    }
 
     console.log(`Manager running in tmux session '${session}'.`);
-    console.log(`UI: http://127.0.0.1:${port}/ui/`);
+    console.log(`UI: ${baseUrl}/ui/`);
     console.log(`Attach: tmux attach -t ${session}`);
   });
 

@@ -33,6 +33,25 @@ window_exists() {
   tmux list-windows -t "$SESSION_NAME" -F '#{window_name}' | grep -Fxq "$1"
 }
 
+pane_idle() {
+  local window_name="$1"
+  local command=""
+  local shell_name=""
+
+  command="$(tmux display-message -t "$SESSION_NAME:$window_name" -p '#{pane_current_command}' 2>/dev/null || true)"
+  if [ -n "${SHELL:-}" ]; then
+    shell_name="$(basename "$SHELL")"
+  fi
+
+  case "$command" in
+    zsh|bash|sh|fish|nu|elvish|xonsh|login|"$shell_name")
+      return 0
+      ;;
+  esac
+
+  return 1
+}
+
 start_window() {
   local window_name="$1"
   local command="$2"
@@ -41,16 +60,19 @@ start_window() {
     if [ "$RESTART" -eq 1 ]; then
       tmux kill-window -t "$SESSION_NAME:$window_name"
     else
+      if pane_idle "$window_name"; then
+        tmux send-keys -t "$SESSION_NAME:$window_name" "cd "$ROOT_DIR" && $command" C-m
+      fi
       return 0
     fi
   fi
 
   tmux new-window -d -t "$SESSION_NAME" -n "$window_name" -c "$ROOT_DIR"
-  tmux send-keys -t "$SESSION_NAME:$window_name" "$command" C-m
+  tmux send-keys -t "$SESSION_NAME:$window_name" "cd "$ROOT_DIR" && $command" C-m
 }
 
 if [ "$session_created" -eq 1 ]; then
-  tmux send-keys -t "$SESSION_NAME:$DAEMON_WINDOW" "$DAEMON_CMD" C-m
+  tmux send-keys -t "$SESSION_NAME:$DAEMON_WINDOW" "cd "$ROOT_DIR" && $DAEMON_CMD" C-m
 else
   start_window "$DAEMON_WINDOW" "$DAEMON_CMD"
 fi

@@ -2,8 +2,13 @@
 
 ## Unreleased
 
+### Added
+- Stop action now shows a delayed spinner if the request takes longer than 100ms.
+
 ### Fixed
 - Publish workflow now uses `pnpm publish --filter` to avoid npm workspace publish errors.
+- Bootstrap now starts the daemon from an existing window even if it was left in a different directory.
+- CLI bootstrap now waits for the daemon to become reachable before returning.
 
 ## 0.1.2 - 2026-01-16
 
