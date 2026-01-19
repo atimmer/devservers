@@ -12,16 +12,4 @@ pnpm run typecheck
 pnpm run test
 ```
 
-4. Publish in dependency order:
-
-```
-pnpm -C packages/shared publish --access public
-pnpm -C packages/daemon publish --access public
-pnpm -C packages/cli publish --access public
-```
-
-5. Tag the release in git and push.
-
-## GitHub Actions (manual)
-
-Run the `Publish to npm` workflow after setting `NPM_TOKEN` in repo secrets.
+4. Tag the release in git and push to GitHub.

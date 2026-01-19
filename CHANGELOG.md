@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Changed
+- Release checklist now only documents prep work plus tagging/pushing (publishing handled by GitHub Actions).
+
+### Fixed
+- UI build now includes React type definitions for TypeScript.
+- Error boundary now stores caught errors along with component stacks for strict builds.
+- Port registry tests now use bracketed env access to satisfy strict typing.
+
+## 0.2.0 - 2026-01-19
+
 ### Added
 - UI now shows a dev-only error boundary message when rendering fails.
 

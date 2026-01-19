@@ -12,15 +12,15 @@ describe("port registry", () => {
   let previousEnv: string | undefined;
 
   beforeEach(() => {
-    previousEnv = process.env.DEVSERVER_PORT_REGISTRY;
-    delete process.env.DEVSERVER_PORT_REGISTRY;
+    previousEnv = process.env["DEVSERVER_PORT_REGISTRY"];
+    delete process.env["DEVSERVER_PORT_REGISTRY"];
   });
 
   afterEach(() => {
     if (previousEnv) {
-      process.env.DEVSERVER_PORT_REGISTRY = previousEnv;
+      process.env["DEVSERVER_PORT_REGISTRY"] = previousEnv;
     } else {
-      delete process.env.DEVSERVER_PORT_REGISTRY;
+      delete process.env["DEVSERVER_PORT_REGISTRY"];
     }
   });
 
