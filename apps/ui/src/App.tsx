@@ -75,7 +75,8 @@ const ActionButton = ({
   variant,
   className,
   isLoading = false,
-  disabled = false
+  disabled = false,
+  spinnerClassName
 }: {
   label: string;
   onClick: () => void;
@@ -83,6 +84,7 @@ const ActionButton = ({
   className?: string;
   isLoading?: boolean;
   disabled?: boolean;
+  spinnerClassName?: string;
 }) => {
   const styles =
     variant === "start"
@@ -96,11 +98,13 @@ const ActionButton = ({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] transition disabled:cursor-not-allowed disabled:opacity-70 ${styles} ${className ?? ""}`}
+      className={`h-9 w-full rounded-full px-3 py-0 text-[11px] font-semibold uppercase leading-none tracking-[0.18em] transition disabled:cursor-not-allowed disabled:opacity-70 ${styles} ${className ?? ""}`}
     >
       <span className="inline-flex items-center justify-center gap-2">
         {isLoading ? (
-          <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+          <span
+            className={`h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent ${spinnerClassName ?? ""}`}
+          />
         ) : null}
         <span>{label}</span>
       </span>
@@ -118,6 +122,7 @@ export default function App() {
   const logsRef = useRef<HTMLPreElement | null>(null);
   const shouldScrollRef = useRef(false);
   const [pendingStarts, setPendingStarts] = useState<string[]>([]);
+  const [pendingStops, setPendingStops] = useState<string[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [formMode, setFormMode] = useState<"add" | "edit">("add");
   const [editingService, setEditingService] = useState<ServiceInfo | null>(null);
@@ -200,6 +205,9 @@ export default function App() {
       if (action === "start") {
         setPendingStarts((prev) => (prev.includes(name) ? prev : [...prev, name]));
       }
+      if (action === "stop") {
+        setPendingStops((prev) => (prev.includes(name) ? prev : [...prev, name]));
+      }
       try {
         if (action === "start") {
           await startService(name);
@@ -209,10 +217,16 @@ export default function App() {
           await restartService(name);
         }
         await refresh();
+        if (action === "stop") {
+          setPendingStops((prev) => prev.filter((pending) => pending !== name));
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
         if (action === "start") {
           setPendingStarts((prev) => prev.filter((pending) => pending !== name));
+        }
+        if (action === "stop") {
+          setPendingStops((prev) => prev.filter((pending) => pending !== name));
         }
       }
     },
@@ -356,7 +370,7 @@ export default function App() {
                 key={service.name}
                 className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-[0_0_40px_rgba(0,0,0,0.2)]"
               >
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                   <div className="flex flex-col gap-3">
                     <div className="flex items-center gap-3">
                       <h2 className="text-xl font-semibold text-white">{service.name}</h2>
@@ -386,8 +400,8 @@ export default function App() {
                       ) : null}
                     </div>
                   </div>
-                  <div className="grid gap-4 sm:min-w-[260px] sm:grid-cols-2">
-                    <div className="grid gap-2">
+                  <div className="flex flex-col items-start gap-4 sm:flex-none sm:flex-row sm:items-start">
+                    <div className="grid w-[140px] max-w-full content-start items-start gap-2">
                       <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500">
                         Controls
                       </p>
@@ -401,22 +415,25 @@ export default function App() {
                           className="w-full justify-center"
                         />
                       )}
+                      {service.status === "stopped" ? null : (
+                        <ActionButton
+                          label="Stop"
+                          variant="stop"
+                          onClick={() => handleAction("stop", service.name)}
+                          isLoading={pendingStops.includes(service.name)}
+                          disabled={pendingStops.includes(service.name)}
+                          spinnerClassName="opacity-100 transition-opacity delay-100 start:opacity-0"
+                          className="w-full justify-center"
+                        />
+                      )}
                       <ActionButton
                         label="Restart"
                         variant="restart"
                         onClick={() => handleAction("restart", service.name)}
                         className="w-full justify-center"
                       />
-                      {service.status === "stopped" ? null : (
-                        <ActionButton
-                          label="Stop"
-                          variant="stop"
-                          onClick={() => handleAction("stop", service.name)}
-                          className="w-full justify-center"
-                        />
-                      )}
                     </div>
-                    <div className="grid gap-2">
+                    <div className="grid w-[140px] max-w-full content-start items-start gap-2">
                       <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500">
                         Utilities
                       </p>
@@ -430,7 +447,7 @@ export default function App() {
                             }
                             window.open(url, "_blank", "noopener,noreferrer");
                           }}
-                          className="w-full rounded-full border border-white/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:border-white/60"
+                          className="h-9 w-full rounded-full border border-white/20 px-3 py-0 text-[11px] font-semibold uppercase leading-none tracking-[0.18em] text-white transition hover:border-white/60"
                         >
                           Open
                         </button>
@@ -450,17 +467,28 @@ export default function App() {
                           });
                           setShowForm(true);
                         }}
-                        className="w-full rounded-full border border-white/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:border-white/60"
+                        className="h-9 w-full rounded-full border border-white/20 px-3 py-0 text-[11px] font-semibold uppercase leading-none tracking-[0.18em] text-white transition hover:border-white/60"
                       >
                         Edit
                       </button>
                       <button
                         type="button"
                         onClick={() => setActiveLogService(service)}
-                        className="w-full rounded-full border border-white/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:border-white/60"
+                        className="h-9 w-full rounded-full border border-white/20 px-3 py-0 text-[11px] font-semibold uppercase leading-none tracking-[0.18em] text-white transition hover:border-white/60"
                       >
                         Logs
                       </button>
+                      {service.status === "running" && service.port ? null : (
+                        <button
+                          type="button"
+                          className="invisible h-9 w-full rounded-full border border-white/20 px-3 py-0 text-[11px] font-semibold uppercase leading-none tracking-[0.18em] text-white"
+                          aria-hidden="true"
+                          tabIndex={-1}
+                          disabled
+                        >
+                          Open
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -481,7 +509,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setActiveLogService(null)}
-                className="rounded-full border border-white/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:border-white/60"
+                className="rounded-full border border-white/20 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-white transition hover:border-white/60"
               >
                 Close
               </button>

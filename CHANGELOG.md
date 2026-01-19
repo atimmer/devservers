@@ -6,8 +6,7 @@
 - Stop action now shows a delayed spinner if the request takes longer than 100ms.
 
 ### Changed
-- Service controls now show Stop above Restart.
-- Control/utility button columns now use a fixed width for consistent sizing.
+- Service cards now keep controls/utilities top-aligned with consistent button sizing and reserved utility space (Stop above Restart, 140x36 buttons).
 
 ### Fixed
 - Publish workflow now uses `pnpm publish --filter` to avoid npm workspace publish errors.
