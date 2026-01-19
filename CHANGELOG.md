@@ -4,15 +4,19 @@
 
 ### Added
 - Stop action now shows a delayed spinner if the request takes longer than 100ms.
+- Restart action now shows a spinner while the request is in flight.
 
 ### Changed
 - Service cards now keep controls/utilities top-aligned with consistent button sizing and reserved utility space (Stop above Restart, 140x36 buttons).
+- Controls now render via a shared action button helper component.
+- Action spinners now resolve based on refreshed service status instead of local effects.
 
 ### Fixed
 - Publish workflow now uses `pnpm publish --filter` to avoid npm workspace publish errors.
 - Bootstrap now starts the daemon from an existing window even if it was left in a different directory.
 - CLI bootstrap now waits for the daemon to become reachable before returning.
 - Stopping a service now removes its tmux window to avoid stale sessions.
+- Restart spinner now persists until the service is running again.
 
 ## 0.1.2 - 2026-01-16
 

@@ -112,6 +112,63 @@ const ActionButton = ({
   );
 };
 
+const ServiceActionButtons = ({
+  status,
+  name,
+  pendingStarts,
+  pendingStops,
+  pendingRestarts,
+  onAction
+}: {
+  status: ServiceStatus;
+  name: string;
+  pendingStarts: string[];
+  pendingStops: string[];
+  pendingRestarts: string[];
+  onAction: (action: "start" | "stop" | "restart", name: string) => void;
+}) => {
+  const actions = [
+    {
+      label: "Start",
+      variant: "start" as const,
+      shouldShow: status !== "running",
+      isLoading: pendingStarts.includes(name)
+    },
+    {
+      label: "Stop",
+      variant: "stop" as const,
+      shouldShow: status !== "stopped",
+      isLoading: pendingStops.includes(name),
+      spinnerClassName: "opacity-100 transition-opacity delay-100 start:opacity-0"
+    },
+    {
+      label: "Restart",
+      variant: "restart" as const,
+      shouldShow: true,
+      isLoading: pendingRestarts.includes(name)
+    }
+  ];
+
+  return (
+    <>
+      {actions
+        .filter((notice) => notice.shouldShow)
+        .map(({ label, variant, isLoading, spinnerClassName }) => (
+          <ActionButton
+            key={variant}
+            label={label}
+            variant={variant}
+            onClick={() => onAction(variant, name)}
+            isLoading={isLoading}
+            disabled={isLoading}
+            spinnerClassName={spinnerClassName}
+            className="w-full justify-center"
+          />
+        ))}
+    </>
+  );
+};
+
 export default function App() {
   const [services, setServices] = useState<ServiceInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -123,6 +180,7 @@ export default function App() {
   const shouldScrollRef = useRef(false);
   const [pendingStarts, setPendingStarts] = useState<string[]>([]);
   const [pendingStops, setPendingStops] = useState<string[]>([]);
+  const [pendingRestarts, setPendingRestarts] = useState<string[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [formMode, setFormMode] = useState<"add" | "edit">("add");
   const [editingService, setEditingService] = useState<ServiceInfo | null>(null);
@@ -140,6 +198,22 @@ export default function App() {
       setError(null);
       const data = await getServices();
       setServices(data);
+      const serviceNames = new Set(data.map((service) => service.name));
+      const runningOrError = new Set(
+        data
+          .filter((service) => service.status === "running" || service.status === "error")
+          .map((service) => service.name)
+      );
+      const stopped = new Set(
+        data.filter((service) => service.status === "stopped").map((service) => service.name)
+      );
+      setPendingStarts((prev) =>
+        prev.filter((name) => serviceNames.has(name) && !runningOrError.has(name))
+      );
+      setPendingRestarts((prev) =>
+        prev.filter((name) => serviceNames.has(name) && !runningOrError.has(name))
+      );
+      setPendingStops((prev) => prev.filter((name) => serviceNames.has(name) && !stopped.has(name)));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -152,25 +226,6 @@ export default function App() {
     const interval = setInterval(refresh, 4000);
     return () => clearInterval(interval);
   }, [refresh]);
-
-  useEffect(() => {
-    if (pendingStarts.length === 0) {
-      return;
-    }
-    const resolved = new Set(
-      services
-        .filter(
-          (service) =>
-            pendingStarts.includes(service.name) &&
-            (service.status === "running" || service.status === "error")
-        )
-        .map((service) => service.name)
-    );
-    if (resolved.size === 0) {
-      return;
-    }
-    setPendingStarts((prev) => prev.filter((name) => !resolved.has(name)));
-  }, [pendingStarts, services]);
 
   useEffect(() => {
     if (!activeLogService) {
@@ -208,6 +263,9 @@ export default function App() {
       if (action === "stop") {
         setPendingStops((prev) => (prev.includes(name) ? prev : [...prev, name]));
       }
+      if (action === "restart") {
+        setPendingRestarts((prev) => (prev.includes(name) ? prev : [...prev, name]));
+      }
       try {
         if (action === "start") {
           await startService(name);
@@ -217,9 +275,6 @@ export default function App() {
           await restartService(name);
         }
         await refresh();
-        if (action === "stop") {
-          setPendingStops((prev) => prev.filter((pending) => pending !== name));
-        }
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
         if (action === "start") {
@@ -227,6 +282,9 @@ export default function App() {
         }
         if (action === "stop") {
           setPendingStops((prev) => prev.filter((pending) => pending !== name));
+        }
+        if (action === "restart") {
+          setPendingRestarts((prev) => prev.filter((pending) => pending !== name));
         }
       }
     },
@@ -405,32 +463,13 @@ export default function App() {
                       <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500">
                         Controls
                       </p>
-                      {service.status === "running" ? null : (
-                        <ActionButton
-                          label="Start"
-                          variant="start"
-                          onClick={() => handleAction("start", service.name)}
-                          isLoading={pendingStarts.includes(service.name)}
-                          disabled={pendingStarts.includes(service.name)}
-                          className="w-full justify-center"
-                        />
-                      )}
-                      {service.status === "stopped" ? null : (
-                        <ActionButton
-                          label="Stop"
-                          variant="stop"
-                          onClick={() => handleAction("stop", service.name)}
-                          isLoading={pendingStops.includes(service.name)}
-                          disabled={pendingStops.includes(service.name)}
-                          spinnerClassName="opacity-100 transition-opacity delay-100 start:opacity-0"
-                          className="w-full justify-center"
-                        />
-                      )}
-                      <ActionButton
-                        label="Restart"
-                        variant="restart"
-                        onClick={() => handleAction("restart", service.name)}
-                        className="w-full justify-center"
+                      <ServiceActionButtons
+                        status={service.status}
+                        name={service.name}
+                        pendingStarts={pendingStarts}
+                        pendingStops={pendingStops}
+                        pendingRestarts={pendingRestarts}
+                        onAction={handleAction}
                       />
                     </div>
                     <div className="grid w-[140px] max-w-full content-start items-start gap-2">
