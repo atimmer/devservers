@@ -1,6 +1,7 @@
 import { execa } from "execa";
 import { setTimeout as delay } from "node:timers/promises";
 import type { DevServerService, ServiceStatus } from "@24letters/devservers-shared";
+import { resolveEnv } from "./env.js";
 
 const SESSION_NAME = "devservers";
 const IDLE_COMMANDS = new Set(["zsh", "bash", "sh", "fish"]);
@@ -14,13 +15,14 @@ const shellEscape = (value: string) => {
   return `'${escaped}'`;
 };
 
-const buildCommand = (service: DevServerService) => {
-  if (!service.env || Object.keys(service.env).length === 0) {
+const buildCommand = (service: DevServerService, resolvedPort?: number) => {
+  const env = resolveEnv(service.env, resolvedPort);
+  if (!env || Object.keys(env).length === 0) {
     return service.command;
   }
 
-  const envPrefix = Object.entries(service.env)
-    .map(([key, value]) => `${key}=${shellEscape(value)}`)
+  const envPrefix = Object.entries(env)
+    .map(([key, value]) => `${key}=${shellEscape(value ?? "")}`)
     .join(" ");
   return `${envPrefix} ${service.command}`;
 };
@@ -73,9 +75,12 @@ const isPaneIdle = async (windowName: string) => {
   return IDLE_COMMANDS.has(command);
 };
 
-export const startWindow = async (service: DevServerService): Promise<boolean> => {
+export const startWindow = async (
+  service: DevServerService,
+  options?: { resolvedPort?: number }
+): Promise<boolean> => {
   await ensureSession();
-  const command = buildCommand(service);
+  const command = buildCommand(service, options?.resolvedPort);
 
   const exists = await windowExists(service.name);
   if (exists) {
@@ -118,10 +123,13 @@ export const stopWindow = async (windowName: string) => {
   }
 };
 
-export const restartWindow = async (service: DevServerService): Promise<boolean> => {
+export const restartWindow = async (
+  service: DevServerService,
+  options?: { resolvedPort?: number }
+): Promise<boolean> => {
   await stopWindow(service.name);
   await delay(300);
-  return await startWindow(service);
+  return await startWindow(service, options);
 };
 
 export const isPaneDead = async (windowName: string) => {

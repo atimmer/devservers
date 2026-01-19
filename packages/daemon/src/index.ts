@@ -15,6 +15,7 @@ import {
   type ServiceInfo
 } from "@24letters/devservers-shared";
 import { readConfig, removeService, resolveConfigPath, upsertService, writeConfig } from "./config.js";
+import { ensureRegistryPort, readPortRegistry } from "./port-registry.js";
 import {
   capturePane,
   getServiceStatus,
@@ -77,9 +78,20 @@ if (existsSync(uiRoot)) {
 
 const listServices = async (): Promise<ServiceInfo[]> => {
   const config = await readConfig(configPath);
+  let registryPorts: Record<string, number> = {};
+  try {
+    const registry = await readPortRegistry(configPath);
+    registryPorts = registry.ports;
+  } catch (error) {
+    server.log.error({ err: error }, "Failed to read port registry");
+  }
   const statuses = await Promise.all(
     config.services.map(async (service) => ({
       ...service,
+      port:
+        resolvePortMode(service) === "registry"
+          ? resolveServicePort(service, registryPorts)
+          : service.port,
       status: await getServiceStatus(service)
     }))
   );
@@ -122,6 +134,30 @@ const orderServices = (services: ServiceInfo[]) => {
 
 const resolvePortMode = (service: DevServerService): PortMode => {
   return service.portMode ?? DEFAULT_PORT_MODE;
+};
+
+const resolveServicePort = (
+  service: DevServerService,
+  registryPorts: Record<string, number>
+) => {
+  const portMode = resolvePortMode(service);
+  if (portMode === "registry") {
+    return registryPorts[service.name];
+  }
+  return service.port;
+};
+
+const collectReservedPorts = (config: DevServerConfig, currentName: string) => {
+  const reserved = new Set<number>();
+  for (const service of config.services) {
+    if (service.name === currentName) {
+      continue;
+    }
+    if (typeof service.port === "number" && Number.isFinite(service.port)) {
+      reserved.add(service.port);
+    }
+  }
+  return reserved;
 };
 
 const extractPortFromLogs = (logs: string): number | undefined => {
@@ -242,9 +278,25 @@ server.post("/services/:name/start", async (request, reply) => {
     return reply.code(404).send({ error: "service not found" });
   }
   const portMode = resolvePortMode(service);
+  let resolvedPort: number | undefined;
+  if (portMode === "registry") {
+    try {
+      const reservedPorts = collectReservedPorts(config, service.name);
+      const registry = await ensureRegistryPort(configPath, service.name, {
+        preferredPort: service.port,
+        reservedPorts
+      });
+      resolvedPort = registry.port;
+    } catch (error) {
+      request.log.error({ err: error }, "Failed to read port registry");
+      return reply.code(500).send({ error: "failed to read port registry" });
+    }
+  } else {
+    resolvedPort = service.port;
+  }
   const baseline =
     portMode === "detect" ? await capturePane(service.name, PORT_LOG_LINES) : "";
-  const started = await startWindow(service);
+  const started = await startWindow(service, { resolvedPort });
   if (started) {
     await updateLastStartedAt(config, service, new Date().toISOString());
     if (portMode === "detect") {
@@ -282,9 +334,25 @@ server.post("/services/:name/restart", async (request, reply) => {
     return reply.code(404).send({ error: "service not found" });
   }
   const portMode = resolvePortMode(service);
+  let resolvedPort: number | undefined;
+  if (portMode === "registry") {
+    try {
+      const reservedPorts = collectReservedPorts(config, service.name);
+      const registry = await ensureRegistryPort(configPath, service.name, {
+        preferredPort: service.port,
+        reservedPorts
+      });
+      resolvedPort = registry.port;
+    } catch (error) {
+      request.log.error({ err: error }, "Failed to read port registry");
+      return reply.code(500).send({ error: "failed to read port registry" });
+    }
+  } else {
+    resolvedPort = service.port;
+  }
   const baseline =
     portMode === "detect" ? await capturePane(service.name, PORT_LOG_LINES) : "";
-  const started = await restartWindow(service);
+  const started = await restartWindow(service, { resolvedPort });
   if (started) {
     await updateLastStartedAt(config, service, new Date().toISOString());
     if (portMode === "detect") {
