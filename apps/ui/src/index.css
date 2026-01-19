@@ -5,6 +5,12 @@
   color-scheme: light;
 }
 
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 420ms;
+  animation-timing-function: cubic-bezier(0.2, 0, 0.2, 1);
+}
+
 html,
 body,
 #root {

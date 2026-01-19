@@ -1,4 +1,46 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React from "react";
+
+const ViewTransition =
+  (React as { ViewTransition?: React.ComponentType<React.PropsWithChildren> }).ViewTransition ??
+  (React as { unstable_ViewTransition?: React.ComponentType<React.PropsWithChildren> })
+    .unstable_ViewTransition ??
+  React.Fragment;
+const { startTransition, useCallback, useEffect, useMemo, useRef, useState } = React;
+
+class ErrorBoundary extends React.Component<
+  React.PropsWithChildren,
+  { error?: Error; errorInfo?: React.ErrorInfo }
+> {
+  state: { error?: Error; errorInfo?: React.ErrorInfo } = {};
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    this.setState({ errorInfo });
+  }
+
+  render() {
+    const { error, errorInfo } = this.state;
+    if (!error) {
+      return this.props.children;
+    }
+    return (
+      <div className="mx-auto flex min-h-screen max-w-4xl flex-col gap-4 px-6 py-10 text-slate-100">
+        <h1 className="text-2xl font-semibold">Something went wrong.</h1>
+        {import.meta.env.DEV ? (
+          <div className="rounded-2xl border border-rose-400/40 bg-rose-500/10 px-4 py-3 text-xs text-rose-100">
+            <p className="font-semibold">{error.message}</p>
+            {errorInfo?.componentStack ? (
+              <pre className="mt-2 whitespace-pre-wrap">{errorInfo.componentStack}</pre>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+}
 import {
   addService,
   createLogsSocket,
@@ -197,7 +239,6 @@ export default function App() {
     try {
       setError(null);
       const data = await getServices();
-      setServices(data);
       const serviceNames = new Set(data.map((service) => service.name));
       const runningOrError = new Set(
         data
@@ -207,17 +248,24 @@ export default function App() {
       const stopped = new Set(
         data.filter((service) => service.status === "stopped").map((service) => service.name)
       );
-      setPendingStarts((prev) =>
-        prev.filter((name) => serviceNames.has(name) && !runningOrError.has(name))
-      );
-      setPendingRestarts((prev) =>
-        prev.filter((name) => serviceNames.has(name) && !runningOrError.has(name))
-      );
-      setPendingStops((prev) => prev.filter((name) => serviceNames.has(name) && !stopped.has(name)));
+      startTransition(() => {
+        setServices(data);
+        setPendingStarts((prev) =>
+          prev.filter((name) => serviceNames.has(name) && !runningOrError.has(name))
+        );
+        setPendingRestarts((prev) =>
+          prev.filter((name) => serviceNames.has(name) && !runningOrError.has(name))
+        );
+        setPendingStops((prev) =>
+          prev.filter((name) => serviceNames.has(name) && !stopped.has(name))
+        );
+        setLoading(false);
+      });
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoading(false);
+      startTransition(() => {
+        setError(err instanceof Error ? err.message : String(err));
+        setLoading(false);
+      });
     }
   }, []);
 
@@ -359,337 +407,344 @@ export default function App() {
   };
 
   return (
-    <div className="relative min-h-full overflow-hidden bg-[#0b0e12] text-slate-100">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(900px_circle_at_20%_-10%,#233247,transparent_60%),radial-gradient(700px_circle_at_80%_10%,#2a1d2e,transparent_55%)]" />
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-slate-950/70 to-transparent" />
+    <ErrorBoundary>
+      <div className="relative min-h-full overflow-hidden bg-[#0b0e12] text-slate-100">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(900px_circle_at_20%_-10%,#233247,transparent_60%),radial-gradient(700px_circle_at_80%_10%,#2a1d2e,transparent_55%)]" />
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-slate-950/70 to-transparent" />
 
-      <div className="relative mx-auto flex min-h-screen max-w-6xl flex-col gap-10 px-6 py-10">
-        <header className="flex flex-col gap-6">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <p className="text-xs uppercase tracking-[0.4em] text-slate-400">
-                Local Orchestration
-              </p>
-              <h1 className="mt-2 text-4xl font-semibold tracking-tight text-white">Devservers</h1>
-              <p className="mt-3 max-w-2xl text-sm text-slate-300">
-                Start, stop, and track local dev servers from a single tmux session. Logs stay
-                grouped; visibility stays clean.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                setFormMode("add");
-                setEditingService(null);
-                resetForm();
-                setShowForm(true);
-              }}
-              className="rounded-full border border-slate-500/40 bg-white/10 px-5 py-3 text-xs font-semibold uppercase tracking-[0.3em] text-white transition hover:border-white/60 hover:bg-white/20"
-            >
-              Add Service
-            </button>
-          </div>
-
-          <div className="flex flex-wrap gap-4">
-            {([
-              ["running", statusSummary.running],
-              ["stopped", statusSummary.stopped],
-              ["error", statusSummary.error]
-            ] as const).map(([label, value]) => (
-              <div
-                key={label}
-                className="flex min-w-[140px] items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-4 py-3"
-              >
-                <span className="text-xs uppercase tracking-[0.3em] text-slate-400">{label}</span>
-                <span className="text-lg font-semibold text-white">{value}</span>
+        <div className="relative mx-auto flex min-h-screen max-w-6xl flex-col gap-10 px-6 py-10">
+          <header className="flex flex-col gap-6">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <p className="text-xs uppercase tracking-[0.4em] text-slate-400">
+                  Local Orchestration
+                </p>
+                <h1 className="mt-2 text-4xl font-semibold tracking-tight text-white">
+                  Devservers
+                </h1>
+                <p className="mt-3 max-w-2xl text-sm text-slate-300">
+                  Start, stop, and track local dev servers from a single tmux session. Logs stay
+                  grouped; visibility stays clean.
+                </p>
               </div>
-            ))}
-          </div>
-        </header>
+              <button
+                type="button"
+                onClick={() => {
+                  setFormMode("add");
+                  setEditingService(null);
+                  resetForm();
+                  setShowForm(true);
+                }}
+                className="rounded-full border border-slate-500/40 bg-white/10 px-5 py-3 text-xs font-semibold uppercase tracking-[0.3em] text-white transition hover:border-white/60 hover:bg-white/20"
+              >
+                Add Service
+              </button>
+            </div>
 
-        {error ? (
-          <div className="rounded-2xl border border-rose-400/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
-            {error}
+            <div className="flex flex-wrap gap-4">
+              {([
+                ["running", statusSummary.running],
+                ["stopped", statusSummary.stopped],
+                ["error", statusSummary.error]
+              ] as const).map(([label, value]) => (
+                <div
+                  key={label}
+                  className="flex min-w-[140px] items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-4 py-3"
+                >
+                  <span className="text-xs uppercase tracking-[0.3em] text-slate-400">{label}</span>
+                  <span className="text-lg font-semibold text-white">{value}</span>
+                </div>
+              ))}
+            </div>
+          </header>
+
+          {error ? (
+            <div className="rounded-2xl border border-rose-400/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+              {error}
+            </div>
+          ) : null}
+
+          <section className="grid gap-4">
+            {loading ? (
+              <div className="rounded-2xl border border-white/10 bg-white/5 px-6 py-10 text-sm text-slate-300">
+                Loading services…
+              </div>
+            ) : services.length === 0 ? (
+              <div className="rounded-2xl border border-white/10 bg-white/5 px-6 py-10 text-sm text-slate-300">
+                No services yet. Add one to get started.
+              </div>
+            ) : (
+              services.map((service) => (
+                <ViewTransition key={service.name}>
+                  <div className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-[0_0_40px_rgba(0,0,0,0.2)]">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="flex flex-col gap-3">
+                        <div className="flex items-center gap-3">
+                          <h2 className="text-xl font-semibold text-white">{service.name}</h2>
+                          <ServiceStatusPill status={service.status} />
+                        </div>
+                        <div className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                          {service.command}
+                        </div>
+                        <div className="text-xs text-slate-300">{service.cwd}</div>
+                        <div className="flex flex-wrap gap-3 text-xs text-slate-400">
+                          {service.portMode === "detect" ? (
+                            service.status === "running" ? (
+                              service.port ? (
+                                <span>Port {service.port}</span>
+                              ) : (
+                                <span>Port ....</span>
+                              )
+                            ) : null
+                          ) : service.port ? (
+                            <span>Port {service.port}</span>
+                          ) : (
+                            <span>No port yet</span>
+                          )}
+                          <span>Mode {portModeLabels[service.portMode ?? "static"]}</span>
+                          {service.env && Object.keys(service.env).length > 0 ? (
+                            <span>{Object.keys(service.env).length} env vars</span>
+                          ) : null}
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-start gap-4 sm:flex-none sm:flex-row sm:items-start">
+                        <div className="grid w-[140px] max-w-full content-start items-start gap-2">
+                          <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500">
+                            Controls
+                          </p>
+                          <ServiceActionButtons
+                            status={service.status}
+                            name={service.name}
+                            pendingStarts={pendingStarts}
+                            pendingStops={pendingStops}
+                            pendingRestarts={pendingRestarts}
+                            onAction={handleAction}
+                          />
+                        </div>
+                        <div className="grid w-[140px] max-w-full content-start items-start gap-2">
+                          <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500">
+                            Utilities
+                          </p>
+                          {service.status === "running" && service.port ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const url = buildServiceUrl(service);
+                                if (!url) {
+                                  return;
+                                }
+                                window.open(url, "_blank", "noopener,noreferrer");
+                              }}
+                              className="h-9 w-full rounded-full border border-white/20 px-3 py-0 text-[11px] font-semibold uppercase leading-none tracking-[0.18em] text-white transition hover:border-white/60"
+                            >
+                              Open
+                            </button>
+                          ) : null}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFormMode("edit");
+                              setEditingService(service);
+                              setFormState({
+                                name: service.name,
+                                cwd: service.cwd,
+                                command: service.command,
+                                port: service.port ? String(service.port) : "",
+                                env: formatEnv(service.env),
+                                portMode: service.portMode ?? "static"
+                              });
+                              setShowForm(true);
+                            }}
+                            className="h-9 w-full rounded-full border border-white/20 px-3 py-0 text-[11px] font-semibold uppercase leading-none tracking-[0.18em] text-white transition hover:border-white/60"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setActiveLogService(service)}
+                            className="h-9 w-full rounded-full border border-white/20 px-3 py-0 text-[11px] font-semibold uppercase leading-none tracking-[0.18em] text-white transition hover:border-white/60"
+                          >
+                            Logs
+                          </button>
+                          {service.status === "running" && service.port ? null : (
+                            <button
+                              type="button"
+                              className="invisible h-9 w-full rounded-full border border-white/20 px-3 py-0 text-[11px] font-semibold uppercase leading-none tracking-[0.18em] text-white"
+                              aria-hidden="true"
+                              tabIndex={-1}
+                              disabled
+                            >
+                              Open
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </ViewTransition>
+              ))
+            )}
+          </section>
+        </div>
+
+        {activeLogService ? (
+          <div className="fixed inset-0 z-20 flex items-end justify-center bg-black/60 px-6 py-10">
+            <div className="w-full max-w-4xl rounded-3xl border border-white/10 bg-[#0c1118] p-6">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Logs</p>
+                  <h3 className="text-lg font-semibold text-white">{activeLogService.name}</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveLogService(null)}
+                  className="rounded-full border border-white/20 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-white transition hover:border-white/60"
+                >
+                  Close
+                </button>
+              </div>
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-xs text-slate-200">
+                <code className="break-all text-[11px] text-slate-200">
+                  tmux attach -r -t {TMUX_SESSION}:{activeLogService.name}
+                </code>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const command = `tmux attach -r -t ${TMUX_SESSION}:${activeLogService.name}`;
+                    try {
+                      await navigator.clipboard.writeText(command);
+                      setCopied(true);
+                      setTimeout(() => setCopied(false), 1500);
+                    } catch {
+                      setCopied(false);
+                    }
+                  }}
+                  className="rounded-full border border-white/20 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-white transition hover:border-white/60"
+                >
+                  {copied ? "Copied" : "Copy"}
+                </button>
+              </div>
+              <pre
+                ref={logsRef}
+                className="mt-4 max-h-[50vh] overflow-auto rounded-2xl border border-white/10 bg-black/40 p-4 text-xs text-slate-200"
+              >
+                {displayLogs.length > 0 ? displayLogs : logs ? "" : "Waiting for logs..."}
+              </pre>
+            </div>
           </div>
         ) : null}
 
-        <section className="grid gap-4">
-          {loading ? (
-            <div className="rounded-2xl border border-white/10 bg-white/5 px-6 py-10 text-sm text-slate-300">
-              Loading services…
-            </div>
-          ) : services.length === 0 ? (
-            <div className="rounded-2xl border border-white/10 bg-white/5 px-6 py-10 text-sm text-slate-300">
-              No services yet. Add one to get started.
-            </div>
-          ) : (
-            services.map((service) => (
-              <div
-                key={service.name}
-                className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-[0_0_40px_rgba(0,0,0,0.2)]"
-              >
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="flex flex-col gap-3">
-                    <div className="flex items-center gap-3">
-                      <h2 className="text-xl font-semibold text-white">{service.name}</h2>
-                      <ServiceStatusPill status={service.status} />
-                    </div>
-                    <div className="text-xs uppercase tracking-[0.3em] text-slate-400">
-                      {service.command}
-                    </div>
-                    <div className="text-xs text-slate-300">{service.cwd}</div>
-                    <div className="flex flex-wrap gap-3 text-xs text-slate-400">
-                      {service.portMode === "detect" ? (
-                        service.status === "running" ? (
-                          service.port ? (
-                            <span>Port {service.port}</span>
-                          ) : (
-                            <span>Port ....</span>
-                          )
-                        ) : null
-                      ) : service.port ? (
-                        <span>Port {service.port}</span>
-                      ) : (
-                        <span>No port yet</span>
-                      )}
-                      <span>Mode {portModeLabels[service.portMode ?? "static"]}</span>
-                      {service.env && Object.keys(service.env).length > 0 ? (
-                        <span>{Object.keys(service.env).length} env vars</span>
-                      ) : null}
-                    </div>
-                  </div>
-                  <div className="flex flex-col items-start gap-4 sm:flex-none sm:flex-row sm:items-start">
-                    <div className="grid w-[140px] max-w-full content-start items-start gap-2">
-                      <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500">
-                        Controls
-                      </p>
-                      <ServiceActionButtons
-                        status={service.status}
-                        name={service.name}
-                        pendingStarts={pendingStarts}
-                        pendingStops={pendingStops}
-                        pendingRestarts={pendingRestarts}
-                        onAction={handleAction}
-                      />
-                    </div>
-                    <div className="grid w-[140px] max-w-full content-start items-start gap-2">
-                      <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500">
-                        Utilities
-                      </p>
-                      {service.status === "running" && service.port ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const url = buildServiceUrl(service);
-                            if (!url) {
-                              return;
-                            }
-                            window.open(url, "_blank", "noopener,noreferrer");
-                          }}
-                          className="h-9 w-full rounded-full border border-white/20 px-3 py-0 text-[11px] font-semibold uppercase leading-none tracking-[0.18em] text-white transition hover:border-white/60"
-                        >
-                          Open
-                        </button>
-                      ) : null}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setFormMode("edit");
-                          setEditingService(service);
-                          setFormState({
-                            name: service.name,
-                            cwd: service.cwd,
-                            command: service.command,
-                            port: service.port ? String(service.port) : "",
-                            env: formatEnv(service.env),
-                            portMode: service.portMode ?? "static"
-                          });
-                          setShowForm(true);
-                        }}
-                        className="h-9 w-full rounded-full border border-white/20 px-3 py-0 text-[11px] font-semibold uppercase leading-none tracking-[0.18em] text-white transition hover:border-white/60"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setActiveLogService(service)}
-                        className="h-9 w-full rounded-full border border-white/20 px-3 py-0 text-[11px] font-semibold uppercase leading-none tracking-[0.18em] text-white transition hover:border-white/60"
-                      >
-                        Logs
-                      </button>
-                      {service.status === "running" && service.port ? null : (
-                        <button
-                          type="button"
-                          className="invisible h-9 w-full rounded-full border border-white/20 px-3 py-0 text-[11px] font-semibold uppercase leading-none tracking-[0.18em] text-white"
-                          aria-hidden="true"
-                          tabIndex={-1}
-                          disabled
-                        >
-                          Open
-                        </button>
-                      )}
-                    </div>
-                  </div>
+        {showForm ? (
+          <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/60 px-6 py-10">
+            <div className="w-full max-w-2xl rounded-3xl border border-white/10 bg-[#0c1118] p-6">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                    {formMode === "edit" ? "Edit Service" : "New Service"}
+                  </p>
+                  <h3 className="text-lg font-semibold text-white">
+                    {formMode === "edit" ? "Update the dev server" : "Add a dev server"}
+                  </h3>
                 </div>
-              </div>
-            ))
-          )}
-        </section>
-      </div>
-
-      {activeLogService ? (
-        <div className="fixed inset-0 z-20 flex items-end justify-center bg-black/60 px-6 py-10">
-          <div className="w-full max-w-4xl rounded-3xl border border-white/10 bg-[#0c1118] p-6">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Logs</p>
-                <h3 className="text-lg font-semibold text-white">{activeLogService.name}</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setActiveLogService(null)}
-                className="rounded-full border border-white/20 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-white transition hover:border-white/60"
-              >
-                Close
-              </button>
-            </div>
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-xs text-slate-200">
-              <code className="break-all text-[11px] text-slate-200">
-                tmux attach -r -t {TMUX_SESSION}:{activeLogService.name}
-              </code>
-              <button
-                type="button"
-                onClick={async () => {
-                  const command = `tmux attach -r -t ${TMUX_SESSION}:${activeLogService.name}`;
-                  try {
-                    await navigator.clipboard.writeText(command);
-                    setCopied(true);
-                    setTimeout(() => setCopied(false), 1500);
-                  } catch {
-                    setCopied(false);
-                  }
-                }}
-                className="rounded-full border border-white/20 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-white transition hover:border-white/60"
-              >
-                {copied ? "Copied" : "Copy"}
-              </button>
-            </div>
-            <pre
-              ref={logsRef}
-              className="mt-4 max-h-[50vh] overflow-auto rounded-2xl border border-white/10 bg-black/40 p-4 text-xs text-slate-200"
-            >
-              {displayLogs.length > 0 ? displayLogs : logs ? "" : "Waiting for logs..."}
-            </pre>
-          </div>
-        </div>
-      ) : null}
-
-      {showForm ? (
-        <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/60 px-6 py-10">
-          <div className="w-full max-w-2xl rounded-3xl border border-white/10 bg-[#0c1118] p-6">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
-                  {formMode === "edit" ? "Edit Service" : "New Service"}
-                </p>
-                <h3 className="text-lg font-semibold text-white">
-                  {formMode === "edit" ? "Update the dev server" : "Add a dev server"}
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  closeForm();
-                }}
-                className="rounded-full border border-white/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:border-white/60"
-              >
-                Close
-              </button>
-            </div>
-
-            <div className="mt-6 grid gap-4">
-              {[
-                { label: "Name", key: "name", placeholder: "api" },
-                { label: "Working dir", key: "cwd", placeholder: "/Users/anton/Code/api" },
-                { label: "Command", key: "command", placeholder: "pnpm dev" },
-                { label: "Port", key: "port", placeholder: "3000" }
-              ].map((field) => {
-                const isNameField = field.key === "name";
-                const isDisabled = formMode === "edit" && isNameField;
-                return (
-                  <label
-                    key={field.key}
-                    className="grid gap-2 text-xs uppercase tracking-[0.3em] text-slate-400"
-                  >
-                    {field.label}
-                    <input
-                      type="text"
-                      value={formState[field.key as keyof typeof formState]}
-                      onChange={(event) =>
-                        setFormState((prev) => ({
-                          ...prev,
-                          [field.key]: event.target.value
-                        }))
-                      }
-                      placeholder={field.placeholder}
-                      disabled={isDisabled}
-                      className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm tracking-normal text-white outline-none transition focus:border-emerald-400/60 disabled:cursor-not-allowed disabled:opacity-60"
-                    />
-                  </label>
-                );
-              })}
-
-              <label className="grid gap-2 text-xs uppercase tracking-[0.3em] text-slate-400">
-                Port mode
-                <select
-                  value={formState.portMode}
-                  onChange={(event) =>
-                    setFormState((prev) => ({
-                      ...prev,
-                      portMode: event.target.value as PortMode
-                    }))
-                  }
-                  className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm tracking-normal text-white outline-none focus:border-emerald-400/60"
+                <button
+                  type="button"
+                  onClick={() => {
+                    closeForm();
+                  }}
+                  className="rounded-full border border-white/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:border-white/60"
                 >
-                  <option value="static">Static (use configured port)</option>
-                  <option value="detect">Detect from logs</option>
-                  <option value="registry">Port registry (use registry file)</option>
-                </select>
-              </label>
+                  Close
+                </button>
+              </div>
 
-              <label className="grid gap-2 text-xs uppercase tracking-[0.3em] text-slate-400">
-                Env (KEY=VALUE per line, $PORT supported)
-                <textarea
-                  rows={4}
-                  value={formState.env}
-                  onChange={(event) => setFormState((prev) => ({ ...prev, env: event.target.value }))}
-                  placeholder={"NODE_ENV=development\nPORT=$PORT\nNEXT_PUBLIC_URL=http://localhost:$PORT"}
-                  className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm tracking-normal text-white outline-none focus:border-emerald-400/60"
-                />
-              </label>
-            </div>
+              <div className="mt-6 grid gap-4">
+                {[
+                  { label: "Name", key: "name", placeholder: "api" },
+                  { label: "Working dir", key: "cwd", placeholder: "/Users/anton/Code/api" },
+                  { label: "Command", key: "command", placeholder: "pnpm dev" },
+                  { label: "Port", key: "port", placeholder: "3000" }
+                ].map((field) => {
+                  const isNameField = field.key === "name";
+                  const isDisabled = formMode === "edit" && isNameField;
+                  return (
+                    <label
+                      key={field.key}
+                      className="grid gap-2 text-xs uppercase tracking-[0.3em] text-slate-400"
+                    >
+                      {field.label}
+                      <input
+                        type="text"
+                        value={formState[field.key as keyof typeof formState]}
+                        onChange={(event) =>
+                          setFormState((prev) => ({
+                            ...prev,
+                            [field.key]: event.target.value
+                          }))
+                        }
+                        placeholder={field.placeholder}
+                        disabled={isDisabled}
+                        className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm tracking-normal text-white outline-none transition focus:border-emerald-400/60 disabled:cursor-not-allowed disabled:opacity-60"
+                      />
+                    </label>
+                  );
+                })}
 
-            <div className="mt-6 flex flex-wrap justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  closeForm();
-                }}
-                className="rounded-full border border-white/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:border-white/60"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={submitForm}
-                className="rounded-full bg-emerald-500 px-5 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-950 transition hover:bg-emerald-400"
-              >
-                {formMode === "edit" ? "Save Changes" : "Save Service"}
-              </button>
+                <label className="grid gap-2 text-xs uppercase tracking-[0.3em] text-slate-400">
+                  Port mode
+                  <select
+                    value={formState.portMode}
+                    onChange={(event) =>
+                      setFormState((prev) => ({
+                        ...prev,
+                        portMode: event.target.value as PortMode
+                      }))
+                    }
+                    className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm tracking-normal text-white outline-none focus:border-emerald-400/60"
+                  >
+                    <option value="static">Static (use configured port)</option>
+                    <option value="detect">Detect from logs</option>
+                    <option value="registry">Port registry (use registry file)</option>
+                  </select>
+                </label>
+
+                <label className="grid gap-2 text-xs uppercase tracking-[0.3em] text-slate-400">
+                  Env (KEY=VALUE per line, $PORT supported)
+                  <textarea
+                    rows={4}
+                    value={formState.env}
+                    onChange={(event) =>
+                      setFormState((prev) => ({ ...prev, env: event.target.value }))
+                    }
+                    placeholder={
+                      "NODE_ENV=development\nPORT=$PORT\nNEXT_PUBLIC_URL=http://localhost:$PORT"
+                    }
+                    className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm tracking-normal text-white outline-none focus:border-emerald-400/60"
+                  />
+                </label>
+              </div>
+
+              <div className="mt-6 flex flex-wrap justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    closeForm();
+                  }}
+                  className="rounded-full border border-white/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:border-white/60"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={submitForm}
+                  className="rounded-full bg-emerald-500 px-5 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-950 transition hover:bg-emerald-400"
+                >
+                  {formMode === "edit" ? "Save Changes" : "Save Service"}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      ) : null}
-    </div>
+        ) : null}
+      </div>
+    </ErrorBoundary>
   );
 }

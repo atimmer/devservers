@@ -4,12 +4,15 @@
 
 ### Added
 - Stop action now shows a delayed spinner if the request takes longer than 100ms.
+- UI now shows a dev-only error boundary message when rendering fails.
 - Restart action now shows a spinner while the request is in flight.
 
 ### Changed
 - Service cards now keep controls/utilities top-aligned with consistent button sizing and reserved utility space (Stop above Restart, 140x36 buttons).
 - Controls now render via a shared action button helper component.
 - Action spinners now resolve based on refreshed service status instead of local effects.
+- Service cards now animate reordering via React ViewTransition (requires React canary).
+- Slowed ViewTransition animation timing for service reorders.
 
 ### Fixed
 - Publish workflow now uses `pnpm publish --filter` to avoid npm workspace publish errors.
@@ -17,6 +20,8 @@
 - CLI bootstrap now waits for the daemon to become reachable before returning.
 - Stopping a service now removes its tmux window to avoid stale sessions.
 - Restart spinner now persists until the service is running again.
+- ViewTransition wrapper now references the runtime React export to avoid undefined component crashes.
+- ViewTransition now pulls from the default React export so Vite's CJS interop can resolve it.
 
 ## 0.1.2 - 2026-01-16
 
