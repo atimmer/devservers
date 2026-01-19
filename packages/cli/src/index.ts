@@ -226,10 +226,13 @@ const tmuxStartWindow = (
   runTmux(["send-keys", "-t", `${session}:${windowName}`, commandWithCwd, "C-m"]);
 };
 
-const buildDaemonCommand = (configPath: string, port: number) => {
+const localDaemonRoot = path.resolve(packageRoot, "..", "daemon");
+const localDaemonEntry = path.join(localDaemonRoot, "src", "index.ts");
+
+const buildDaemonCommand = (entry: string, configPath: string, port: number) => {
   return [
     shellQuote(process.execPath),
-    shellQuote(daemonEntry),
+    shellQuote(entry),
     "--config",
     shellQuote(configPath),
     "--port",
@@ -237,16 +240,37 @@ const buildDaemonCommand = (configPath: string, port: number) => {
   ].join(" ");
 };
 
-const startDaemonWindow = async (configPath: string, port: number, restart: boolean) => {
-  const session = "devservers";
-  const daemonWindow = "manager-daemon";
-  const cwd = process.cwd();
+const buildDevDaemonCommand = (configPath: string, port: number) => {
+  return [
+    "pnpm",
+    "-C",
+    shellQuote(localDaemonRoot),
+    "dev",
+    "--",
+    "--config",
+    shellQuote(configPath),
+    "--port",
+    shellQuote(String(port))
+  ].join(" ");
+};
+
+const resolveDaemonCommand = async (configPath: string, port: number) => {
+  if (await pathExists(localDaemonEntry)) {
+    return buildDevDaemonCommand(configPath, port);
+  }
   if (!(await pathExists(daemonEntry))) {
     throw new Error(
       "Daemon build not found. Run `pnpm -C packages/daemon build` (or `pnpm -r build`) before bootstrapping."
     );
   }
-  const daemonCommand = buildDaemonCommand(configPath, port);
+  return buildDaemonCommand(daemonEntry, configPath, port);
+};
+
+const startDaemonWindow = async (configPath: string, port: number, restart: boolean) => {
+  const session = "devservers";
+  const daemonWindow = "manager-daemon";
+  const cwd = process.cwd();
+  const daemonCommand = await resolveDaemonCommand(configPath, port);
 
   if (!tmuxSessionExists(session)) {
     runTmux(["new-session", "-d", "-s", session, "-n", daemonWindow, "-c", cwd]);
