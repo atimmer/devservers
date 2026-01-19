@@ -614,17 +614,17 @@ export default function App() {
                 >
                   <option value="static">Static (use configured port)</option>
                   <option value="detect">Detect from logs</option>
-                  <option value="registry">Port registry (coming soon)</option>
+                  <option value="registry">Port registry (use registry file)</option>
                 </select>
               </label>
 
               <label className="grid gap-2 text-xs uppercase tracking-[0.3em] text-slate-400">
-                Env (KEY=VALUE per line)
+                Env (KEY=VALUE per line, $PORT supported)
                 <textarea
                   rows={4}
                   value={formState.env}
                   onChange={(event) => setFormState((prev) => ({ ...prev, env: event.target.value }))}
-                  placeholder="NODE_ENV=development"
+                  placeholder={"NODE_ENV=development\nPORT=$PORT\nNEXT_PUBLIC_URL=http://localhost:$PORT"}
                   className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm tracking-normal text-white outline-none focus:border-emerald-400/60"
                 />
               </label>

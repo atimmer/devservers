@@ -24,6 +24,33 @@ Override with:
 
 The repo ships a sample `devservers.json` for development; pass `--config ./devservers.json` to use it.
 
+Port registry file (used when `portMode` is `registry`):
+
+Default file (macOS):
+
+```
+~/Library/Application Support/Devservers Manager/port-registry.json
+```
+
+Default file (Linux):
+
+```
+~/.config/devservers/port-registry.json
+```
+
+Default file (Windows):
+
+```
+%APPDATA%\\Devservers Manager\\port-registry.json
+```
+
+Override with:
+- env `DEVSERVER_PORT_REGISTRY=/path/to/port-registry.json`
+
+When starting a service with `portMode: "registry"`, the daemon will create an
+empty registry file if it is missing and assign the next available port when
+the service does not yet have an entry (starting at 3100).
+
 ## Schema
 
 ```json
@@ -50,3 +77,21 @@ The repo ships a sample `devservers.json` for development; pass `--config ./devs
 - `port` (number, optional): display-only metadata.
 - `portMode` (string, optional): `static`, `detect`, or `registry` (default `static`). `detect` updates `port` from logs.
 - `lastStartedAt` (string, optional): ISO timestamp of the last successful start (managed by the daemon).
+
+### Port registry format
+
+```json
+{
+  "version": 1,
+  "services": {
+    "api": 3000,
+    "web": 5173
+  }
+}
+```
+
+Service names must match `services[].name` in `devservers.json`.
+
+### Port templates in env
+
+Env values may include `$PORT` or `${PORT}` to inject the resolved port. When `portMode` is `registry`, the port comes from the port registry; otherwise it uses `services[].port`.
