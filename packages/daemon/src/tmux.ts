@@ -110,6 +110,12 @@ export const stopWindow = async (windowName: string) => {
     return;
   }
   await runTmux(["send-keys", "-t", `${SESSION_NAME}:${windowName}`, "C-c"]);
+  await delay(200);
+  try {
+    await runTmux(["kill-window", "-t", `${SESSION_NAME}:${windowName}`]);
+  } catch {
+    // window may have closed after stopping
+  }
 };
 
 export const restartWindow = async (service: DevServerService): Promise<boolean> => {

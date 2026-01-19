@@ -5,10 +5,15 @@
 ### Added
 - Stop action now shows a delayed spinner if the request takes longer than 100ms.
 
+### Changed
+- Service controls now show Stop above Restart.
+- Control/utility button columns now use a fixed width for consistent sizing.
+
 ### Fixed
 - Publish workflow now uses `pnpm publish --filter` to avoid npm workspace publish errors.
 - Bootstrap now starts the daemon from an existing window even if it was left in a different directory.
 - CLI bootstrap now waits for the daemon to become reachable before returning.
+- Stopping a service now removes its tmux window to avoid stale sessions.
 
 ## 0.1.2 - 2026-01-16
 
