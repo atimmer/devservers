@@ -431,6 +431,8 @@ export default function App() {
   const startFailureSet = useMemo(() => new Set(startFailures), [startFailures]);
   const logHighlightSet = useMemo(() => new Set(logHighlights), [logHighlights]);
   const displayLogs = useMemo(() => logs.replace(/\s+$/, ""), [logs]);
+  const isModalOpen = Boolean(activeLogService) || showForm;
+  const CardTransition = isModalOpen ? React.Fragment : ViewTransition;
 
   useEffect(() => {
     if (!activeLogService || !shouldScrollRef.current || displayLogs.length === 0) {
@@ -541,7 +543,7 @@ export default function App() {
               </div>
             ) : (
               services.map((service) => (
-                <ViewTransition key={service.name}>
+                <CardTransition key={service.name}>
                   <div className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-[0_0_40px_rgba(0,0,0,0.2)]">
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                       <div className="flex flex-col gap-3">
@@ -653,7 +655,7 @@ export default function App() {
                       </div>
                     </div>
                   </div>
-                </ViewTransition>
+                </CardTransition>
               ))
             )}
           </section>
@@ -669,8 +671,8 @@ export default function App() {
         >
           {activeLogService ? (
             <Dialog.Portal>
-              <Dialog.Overlay className="fixed inset-0 z-20 bg-black/60" />
-              <Dialog.Content className="fixed inset-0 z-20 flex items-end justify-center px-6 py-10 outline-none">
+              <Dialog.Overlay className="fixed inset-0 z-50 bg-black/60" />
+              <Dialog.Content className="fixed inset-0 z-50 flex items-end justify-center px-6 py-10 outline-none">
                 <div className="w-full max-w-4xl rounded-3xl border border-white/10 bg-[#0c1118] p-6">
                   <div className="flex items-center justify-between gap-4">
                     <div>
@@ -733,8 +735,8 @@ export default function App() {
         >
           {showForm ? (
             <Dialog.Portal>
-              <Dialog.Overlay className="fixed inset-0 z-20 bg-black/60" />
-              <Dialog.Content className="fixed inset-0 z-20 flex items-center justify-center px-6 py-10 outline-none">
+              <Dialog.Overlay className="fixed inset-0 z-50 bg-black/60" />
+              <Dialog.Content className="fixed inset-0 z-50 flex items-center justify-center px-6 py-10 outline-none">
                 <div className="w-full max-w-2xl rounded-3xl border border-white/10 bg-[#0c1118] p-6">
                   <div className="flex items-center justify-between gap-4">
                     <div>

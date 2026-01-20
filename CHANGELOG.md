@@ -9,6 +9,7 @@
 - CLI status output now includes service ports when known, with skills/docs noting how to retrieve them.
 - Open button now uses a link targetting a new tab.
 - Open button link now uses the same centered layout as other buttons.
+- Modals now sit above view transitions and use higher z-index overlays to prevent background bleed-through.
 
 ### Fixed
 - UI build now includes React type definitions for TypeScript.
