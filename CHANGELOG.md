@@ -4,11 +4,15 @@
 
 ### Changed
 - Release checklist now only documents prep work plus tagging/pushing (publishing handled by GitHub Actions).
+- Condensed the UI header into a compact stats bar with a more prominent Add Service button, flush to the top with squared upper corners.
+- Updated the README UI screenshot.
 
 ### Fixed
 - UI build now includes React type definitions for TypeScript.
 - Error boundary now stores caught errors along with component stacks for strict builds.
 - Port registry tests now use bracketed env access to satisfy strict typing.
+- Start failures now clear the start spinner, surface an error badge, and highlight Logs until opened.
+- Dialogs now close on Escape using Radix UI.
 
 ## 0.2.0 - 2026-01-19
 

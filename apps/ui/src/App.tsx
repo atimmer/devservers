@@ -1,3 +1,4 @@
+import * as Dialog from "@radix-ui/react-dialog";
 import React from "react";
 
 const ViewTransition =
@@ -221,8 +222,14 @@ export default function App() {
   const logsRef = useRef<HTMLPreElement | null>(null);
   const shouldScrollRef = useRef(false);
   const [pendingStarts, setPendingStarts] = useState<string[]>([]);
+  const pendingStartsRef = useRef<string[]>([]);
   const [pendingStops, setPendingStops] = useState<string[]>([]);
   const [pendingRestarts, setPendingRestarts] = useState<string[]>([]);
+  const [startFailures, setStartFailures] = useState<string[]>([]);
+  const [logHighlights, setLogHighlights] = useState<string[]>([]);
+  const lastStartedAtRef = useRef<Record<string, string | undefined>>({});
+  const startFailuresRef = useRef<string[]>([]);
+  const errorServicesRef = useRef<Set<string>>(new Set());
   const [showForm, setShowForm] = useState(false);
   const [formMode, setFormMode] = useState<"add" | "edit">("add");
   const [editingService, setEditingService] = useState<ServiceInfo | null>(null);
@@ -235,32 +242,104 @@ export default function App() {
     portMode: "static" as PortMode
   });
 
+  useEffect(() => {
+    pendingStartsRef.current = pendingStarts;
+  }, [pendingStarts]);
+
+  useEffect(() => {
+    startFailuresRef.current = startFailures;
+  }, [startFailures]);
+
   const refresh = useCallback(async () => {
     try {
       setError(null);
       const data = await getServices();
       const serviceNames = new Set(data.map((service) => service.name));
-      const runningOrError = new Set(
-        data
-          .filter((service) => service.status === "running" || service.status === "error")
-          .map((service) => service.name)
+      const serviceByName = new Map(data.map((service) => [service.name, service]));
+      const statusErrors = new Set(
+        data.filter((service) => service.status === "error").map((service) => service.name)
       );
-      const stopped = new Set(
-        data.filter((service) => service.status === "stopped").map((service) => service.name)
+      const failedStarts = new Set<string>();
+      const nextLastStartedAt: Record<string, string | undefined> = {};
+      for (const service of data) {
+        nextLastStartedAt[service.name] = service.lastStartedAt;
+      }
+
+      for (const name of pendingStartsRef.current) {
+        const service = serviceByName.get(name);
+        if (!service) {
+          continue;
+        }
+        const lastStartedAt = service.lastStartedAt;
+        const lastStartedChanged =
+          Boolean(lastStartedAt) && lastStartedAt !== lastStartedAtRef.current[name];
+        if (service.status === "error" || (service.status === "stopped" && lastStartedChanged)) {
+          failedStarts.add(name);
+        }
+      }
+      const nextStartFailures = new Set(
+        startFailuresRef.current.filter((name) => serviceNames.has(name))
       );
+      for (const service of data) {
+        if (service.status === "running") {
+          nextStartFailures.delete(service.name);
+        }
+      }
+      for (const name of statusErrors) {
+        nextStartFailures.add(name);
+      }
+      for (const name of failedStarts) {
+        nextStartFailures.add(name);
+      }
+      const currentErrorNames = new Set(nextStartFailures);
+      const newErrorNames = new Set(
+        Array.from(currentErrorNames).filter((name) => !errorServicesRef.current.has(name))
+      );
+
       startTransition(() => {
         setServices(data);
         setPendingStarts((prev) =>
-          prev.filter((name) => serviceNames.has(name) && !runningOrError.has(name))
+          prev.filter((name) => {
+            if (!serviceNames.has(name)) {
+              return false;
+            }
+            if (failedStarts.has(name)) {
+              return false;
+            }
+            const service = serviceByName.get(name);
+            return service ? service.status !== "running" : false;
+          })
         );
         setPendingRestarts((prev) =>
-          prev.filter((name) => serviceNames.has(name) && !runningOrError.has(name))
+          prev.filter((name) => {
+            if (!serviceNames.has(name)) {
+              return false;
+            }
+            const service = serviceByName.get(name);
+            return service ? service.status !== "running" && service.status !== "error" : false;
+          })
         );
         setPendingStops((prev) =>
-          prev.filter((name) => serviceNames.has(name) && !stopped.has(name))
+          prev.filter((name) => {
+            if (!serviceNames.has(name)) {
+              return false;
+            }
+            const service = serviceByName.get(name);
+            return service ? service.status !== "stopped" : false;
+          })
         );
+        setStartFailures(Array.from(nextStartFailures));
+        setLogHighlights((prev) => {
+          const next = new Set(prev.filter((name) => serviceNames.has(name)));
+          for (const name of newErrorNames) {
+            next.add(name);
+          }
+          return Array.from(next);
+        });
         setLoading(false);
       });
+      errorServicesRef.current = currentErrorNames;
+      lastStartedAtRef.current = nextLastStartedAt;
     } catch (err) {
       startTransition(() => {
         setError(err instanceof Error ? err.message : String(err));
@@ -349,6 +428,8 @@ export default function App() {
     );
     return counts;
   }, [services]);
+  const startFailureSet = useMemo(() => new Set(startFailures), [startFailures]);
+  const logHighlightSet = useMemo(() => new Set(logHighlights), [logHighlights]);
   const displayLogs = useMemo(() => logs.replace(/\s+$/, ""), [logs]);
 
   useEffect(() => {
@@ -412,36 +493,9 @@ export default function App() {
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(900px_circle_at_20%_-10%,#233247,transparent_60%),radial-gradient(700px_circle_at_80%_10%,#2a1d2e,transparent_55%)]" />
         <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-slate-950/70 to-transparent" />
 
-        <div className="relative mx-auto flex min-h-screen max-w-6xl flex-col gap-10 px-6 py-10">
-          <header className="flex flex-col gap-6">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div>
-                <p className="text-xs uppercase tracking-[0.4em] text-slate-400">
-                  Local Orchestration
-                </p>
-                <h1 className="mt-2 text-4xl font-semibold tracking-tight text-white">
-                  Devservers
-                </h1>
-                <p className="mt-3 max-w-2xl text-sm text-slate-300">
-                  Start, stop, and track local dev servers from a single tmux session. Logs stay
-                  grouped; visibility stays clean.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setFormMode("add");
-                  setEditingService(null);
-                  resetForm();
-                  setShowForm(true);
-                }}
-                className="rounded-full border border-slate-500/40 bg-white/10 px-5 py-3 text-xs font-semibold uppercase tracking-[0.3em] text-white transition hover:border-white/60 hover:bg-white/20"
-              >
-                Add Service
-              </button>
-            </div>
-
-            <div className="flex flex-wrap gap-4">
+        <div className="relative mx-auto flex min-h-screen max-w-6xl flex-col gap-10 px-6 pb-10 pt-0">
+          <header className="flex flex-wrap items-center justify-between gap-3 rounded-b-2xl rounded-t-none border border-white/10 bg-white/5 px-4 py-2.5">
+            <div className="flex flex-wrap items-center gap-3">
               {([
                 ["running", statusSummary.running],
                 ["stopped", statusSummary.stopped],
@@ -449,13 +503,25 @@ export default function App() {
               ] as const).map(([label, value]) => (
                 <div
                   key={label}
-                  className="flex min-w-[140px] items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-4 py-3"
+                  className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2"
                 >
-                  <span className="text-xs uppercase tracking-[0.3em] text-slate-400">{label}</span>
-                  <span className="text-lg font-semibold text-white">{value}</span>
+                  <span className="text-xs uppercase tracking-widest text-slate-400">{label}</span>
+                  <span className="text-sm font-semibold text-white">{value}</span>
                 </div>
               ))}
             </div>
+            <button
+              type="button"
+              onClick={() => {
+                setFormMode("add");
+                setEditingService(null);
+                resetForm();
+                setShowForm(true);
+              }}
+              className="rounded-full bg-emerald-400 px-5 py-2 text-xs font-semibold uppercase tracking-wider text-slate-950 shadow-lg shadow-emerald-500/30 transition hover:bg-emerald-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200/80 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+            >
+              Add Service
+            </button>
           </header>
 
           {error ? (
@@ -481,7 +547,9 @@ export default function App() {
                       <div className="flex flex-col gap-3">
                         <div className="flex items-center gap-3">
                           <h2 className="text-xl font-semibold text-white">{service.name}</h2>
-                          <ServiceStatusPill status={service.status} />
+                          <ServiceStatusPill
+                            status={startFailureSet.has(service.name) ? "error" : service.status}
+                          />
                         </div>
                         <div className="text-xs uppercase tracking-[0.3em] text-slate-400">
                           {service.command}
@@ -561,8 +629,17 @@ export default function App() {
                           </button>
                           <button
                             type="button"
-                            onClick={() => setActiveLogService(service)}
-                            className="h-9 w-full rounded-full border border-white/20 px-3 py-0 text-[11px] font-semibold uppercase leading-none tracking-[0.18em] text-white transition hover:border-white/60"
+                            onClick={() => {
+                              setActiveLogService(service);
+                              setLogHighlights((prev) =>
+                                prev.filter((highlighted) => highlighted !== service.name)
+                              );
+                            }}
+                            className={`h-9 w-full rounded-full border px-3 py-0 text-[11px] font-semibold uppercase leading-none tracking-[0.18em] transition ${
+                              logHighlightSet.has(service.name)
+                                ? "border-amber-400/70 bg-amber-400/15 text-amber-100 ring-1 ring-amber-300/40 hover:border-amber-300/80"
+                                : "border-white/20 text-white hover:border-white/60"
+                            }`}
                           >
                             Logs
                           </button>
@@ -587,163 +664,191 @@ export default function App() {
           </section>
         </div>
 
-        {activeLogService ? (
-          <div className="fixed inset-0 z-20 flex items-end justify-center bg-black/60 px-6 py-10">
-            <div className="w-full max-w-4xl rounded-3xl border border-white/10 bg-[#0c1118] p-6">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Logs</p>
-                  <h3 className="text-lg font-semibold text-white">{activeLogService.name}</h3>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setActiveLogService(null)}
-                  className="rounded-full border border-white/20 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-white transition hover:border-white/60"
-                >
-                  Close
-                </button>
-              </div>
-              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-xs text-slate-200">
-                <code className="break-all text-[11px] text-slate-200">
-                  tmux attach -r -t {TMUX_SESSION}:{activeLogService.name}
-                </code>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    const command = `tmux attach -r -t ${TMUX_SESSION}:${activeLogService.name}`;
-                    try {
-                      await navigator.clipboard.writeText(command);
-                      setCopied(true);
-                      setTimeout(() => setCopied(false), 1500);
-                    } catch {
-                      setCopied(false);
-                    }
-                  }}
-                  className="rounded-full border border-white/20 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-white transition hover:border-white/60"
-                >
-                  {copied ? "Copied" : "Copy"}
-                </button>
-              </div>
-              <pre
-                ref={logsRef}
-                className="mt-4 max-h-[50vh] overflow-auto rounded-2xl border border-white/10 bg-black/40 p-4 text-xs text-slate-200"
-              >
-                {displayLogs.length > 0 ? displayLogs : logs ? "" : "Waiting for logs..."}
-              </pre>
-            </div>
-          </div>
-        ) : null}
-
-        {showForm ? (
-          <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/60 px-6 py-10">
-            <div className="w-full max-w-2xl rounded-3xl border border-white/10 bg-[#0c1118] p-6">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
-                    {formMode === "edit" ? "Edit Service" : "New Service"}
-                  </p>
-                  <h3 className="text-lg font-semibold text-white">
-                    {formMode === "edit" ? "Update the dev server" : "Add a dev server"}
-                  </h3>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    closeForm();
-                  }}
-                  className="rounded-full border border-white/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:border-white/60"
-                >
-                  Close
-                </button>
-              </div>
-
-              <div className="mt-6 grid gap-4">
-                {[
-                  { label: "Name", key: "name", placeholder: "api" },
-                  { label: "Working dir", key: "cwd", placeholder: "/Users/anton/Code/api" },
-                  { label: "Command", key: "command", placeholder: "pnpm dev" },
-                  { label: "Port", key: "port", placeholder: "3000" }
-                ].map((field) => {
-                  const isNameField = field.key === "name";
-                  const isDisabled = formMode === "edit" && isNameField;
-                  return (
-                    <label
-                      key={field.key}
-                      className="grid gap-2 text-xs uppercase tracking-[0.3em] text-slate-400"
+        <Dialog.Root
+          open={Boolean(activeLogService)}
+          onOpenChange={(open) => {
+            if (!open) {
+              setActiveLogService(null);
+            }
+          }}
+        >
+          {activeLogService ? (
+            <Dialog.Portal>
+              <Dialog.Overlay className="fixed inset-0 z-20 bg-black/60" />
+              <Dialog.Content className="fixed inset-0 z-20 flex items-end justify-center px-6 py-10 outline-none">
+                <div className="w-full max-w-4xl rounded-3xl border border-white/10 bg-[#0c1118] p-6">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <Dialog.Description className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                        Logs
+                      </Dialog.Description>
+                      <Dialog.Title className="text-lg font-semibold text-white">
+                        {activeLogService.name}
+                      </Dialog.Title>
+                    </div>
+                    <Dialog.Close asChild>
+                      <button
+                        type="button"
+                        className="rounded-full border border-white/20 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-white transition hover:border-white/60"
+                      >
+                        Close
+                      </button>
+                    </Dialog.Close>
+                  </div>
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-xs text-slate-200">
+                    <code className="break-all text-[11px] text-slate-200">
+                      tmux attach -r -t {TMUX_SESSION}:{activeLogService.name}
+                    </code>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const command = `tmux attach -r -t ${TMUX_SESSION}:${activeLogService.name}`;
+                        try {
+                          await navigator.clipboard.writeText(command);
+                          setCopied(true);
+                          setTimeout(() => setCopied(false), 1500);
+                        } catch {
+                          setCopied(false);
+                        }
+                      }}
+                      className="rounded-full border border-white/20 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-white transition hover:border-white/60"
                     >
-                      {field.label}
-                      <input
-                        type="text"
-                        value={formState[field.key as keyof typeof formState]}
+                      {copied ? "Copied" : "Copy"}
+                    </button>
+                  </div>
+                  <pre
+                    ref={logsRef}
+                    className="mt-4 max-h-[50vh] overflow-auto rounded-2xl border border-white/10 bg-black/40 p-4 text-xs text-slate-200"
+                  >
+                    {displayLogs.length > 0 ? displayLogs : logs ? "" : "Waiting for logs..."}
+                  </pre>
+                </div>
+              </Dialog.Content>
+            </Dialog.Portal>
+          ) : null}
+        </Dialog.Root>
+
+        <Dialog.Root
+          open={showForm}
+          onOpenChange={(open) => {
+            if (!open) {
+              closeForm();
+            }
+          }}
+        >
+          {showForm ? (
+            <Dialog.Portal>
+              <Dialog.Overlay className="fixed inset-0 z-20 bg-black/60" />
+              <Dialog.Content className="fixed inset-0 z-20 flex items-center justify-center px-6 py-10 outline-none">
+                <div className="w-full max-w-2xl rounded-3xl border border-white/10 bg-[#0c1118] p-6">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <Dialog.Description className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                        {formMode === "edit" ? "Edit Service" : "New Service"}
+                      </Dialog.Description>
+                      <Dialog.Title className="text-lg font-semibold text-white">
+                        {formMode === "edit" ? "Update the dev server" : "Add a dev server"}
+                      </Dialog.Title>
+                    </div>
+                    <Dialog.Close asChild>
+                      <button
+                        type="button"
+                        className="rounded-full border border-white/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:border-white/60"
+                      >
+                        Close
+                      </button>
+                    </Dialog.Close>
+                  </div>
+
+                  <div className="mt-6 grid gap-4">
+                    {[
+                      { label: "Name", key: "name", placeholder: "api" },
+                      { label: "Working dir", key: "cwd", placeholder: "/Users/anton/Code/api" },
+                      { label: "Command", key: "command", placeholder: "pnpm dev" },
+                      { label: "Port", key: "port", placeholder: "3000" }
+                    ].map((field) => {
+                      const isNameField = field.key === "name";
+                      const isDisabled = formMode === "edit" && isNameField;
+                      return (
+                        <label
+                          key={field.key}
+                          className="grid gap-2 text-xs uppercase tracking-[0.3em] text-slate-400"
+                        >
+                          {field.label}
+                          <input
+                            type="text"
+                            value={formState[field.key as keyof typeof formState]}
+                            onChange={(event) =>
+                              setFormState((prev) => ({
+                                ...prev,
+                                [field.key]: event.target.value
+                              }))
+                            }
+                            placeholder={field.placeholder}
+                            disabled={isDisabled}
+                            className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm tracking-normal text-white outline-none transition focus:border-emerald-400/60 disabled:cursor-not-allowed disabled:opacity-60"
+                          />
+                        </label>
+                      );
+                    })}
+
+                    <label className="grid gap-2 text-xs uppercase tracking-[0.3em] text-slate-400">
+                      Port mode
+                      <select
+                        value={formState.portMode}
                         onChange={(event) =>
                           setFormState((prev) => ({
                             ...prev,
-                            [field.key]: event.target.value
+                            portMode: event.target.value as PortMode
                           }))
                         }
-                        placeholder={field.placeholder}
-                        disabled={isDisabled}
-                        className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm tracking-normal text-white outline-none transition focus:border-emerald-400/60 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm tracking-normal text-white outline-none focus:border-emerald-400/60"
+                      >
+                        <option value="static">Static (use configured port)</option>
+                        <option value="detect">Detect from logs</option>
+                        <option value="registry">Port registry (use registry file)</option>
+                      </select>
+                    </label>
+
+                    <label className="grid gap-2 text-xs uppercase tracking-[0.3em] text-slate-400">
+                      Env (KEY=VALUE per line, $PORT supported)
+                      <textarea
+                        rows={4}
+                        value={formState.env}
+                        onChange={(event) =>
+                          setFormState((prev) => ({ ...prev, env: event.target.value }))
+                        }
+                        placeholder={
+                          "NODE_ENV=development\nPORT=$PORT\nNEXT_PUBLIC_URL=http://localhost:$PORT"
+                        }
+                        className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm tracking-normal text-white outline-none focus:border-emerald-400/60"
                       />
                     </label>
-                  );
-                })}
+                  </div>
 
-                <label className="grid gap-2 text-xs uppercase tracking-[0.3em] text-slate-400">
-                  Port mode
-                  <select
-                    value={formState.portMode}
-                    onChange={(event) =>
-                      setFormState((prev) => ({
-                        ...prev,
-                        portMode: event.target.value as PortMode
-                      }))
-                    }
-                    className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm tracking-normal text-white outline-none focus:border-emerald-400/60"
-                  >
-                    <option value="static">Static (use configured port)</option>
-                    <option value="detect">Detect from logs</option>
-                    <option value="registry">Port registry (use registry file)</option>
-                  </select>
-                </label>
-
-                <label className="grid gap-2 text-xs uppercase tracking-[0.3em] text-slate-400">
-                  Env (KEY=VALUE per line, $PORT supported)
-                  <textarea
-                    rows={4}
-                    value={formState.env}
-                    onChange={(event) =>
-                      setFormState((prev) => ({ ...prev, env: event.target.value }))
-                    }
-                    placeholder={
-                      "NODE_ENV=development\nPORT=$PORT\nNEXT_PUBLIC_URL=http://localhost:$PORT"
-                    }
-                    className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm tracking-normal text-white outline-none focus:border-emerald-400/60"
-                  />
-                </label>
-              </div>
-
-              <div className="mt-6 flex flex-wrap justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    closeForm();
-                  }}
-                  className="rounded-full border border-white/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:border-white/60"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={submitForm}
-                  className="rounded-full bg-emerald-500 px-5 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-950 transition hover:bg-emerald-400"
-                >
-                  {formMode === "edit" ? "Save Changes" : "Save Service"}
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : null}
+                  <div className="mt-6 flex flex-wrap justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        closeForm();
+                      }}
+                      className="rounded-full border border-white/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:border-white/60"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={submitForm}
+                      className="rounded-full bg-emerald-500 px-5 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-950 transition hover:bg-emerald-400"
+                    >
+                      {formMode === "edit" ? "Save Changes" : "Save Service"}
+                    </button>
+                  </div>
+                </div>
+              </Dialog.Content>
+            </Dialog.Portal>
+          ) : null}
+        </Dialog.Root>
       </div>
     </ErrorBoundary>
   );
