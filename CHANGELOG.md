@@ -3,7 +3,7 @@
 ## Unreleased
 
 ### Changed
-- _None._
+- Logs viewer now renders ANSI color output via xterm.js when requested.
 
 ### Fixed
 - _None._

@@ -13,7 +13,9 @@
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.15",
     "react": "19.3.0-canary-41b3e9a6-20260119",
-    "react-dom": "19.3.0-canary-41b3e9a6-20260119"
+    "react-dom": "19.3.0-canary-41b3e9a6-20260119",
+    "xterm": "5.3.0",
+    "xterm-addon-fit": "^0.8.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

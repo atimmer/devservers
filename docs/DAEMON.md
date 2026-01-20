@@ -13,7 +13,7 @@ When UI assets are bundled, the daemon serves the UI at `/ui/` and redirects `/`
 - `POST /services/:name/start`
 - `POST /services/:name/stop`
 - `POST /services/:name/restart`
-- `WS /services/:name/logs?lines=200` → streams `{ type: "logs", payload: string }`
+- `WS /services/:name/logs?lines=200[&ansi=1]` → streams `{ type: "logs", payload: string }`
 
 ## Status model
 - `stopped`: window does not exist

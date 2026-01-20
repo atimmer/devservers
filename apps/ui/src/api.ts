@@ -66,6 +66,10 @@ export const startService = (name: string) => postAction(name, "start");
 export const stopService = (name: string) => postAction(name, "stop");
 export const restartService = (name: string) => postAction(name, "restart");
 
-export const createLogsSocket = (name: string, lines = 200) => {
-  return new WebSocket(`${WS_BASE}/services/${name}/logs?lines=${lines}`);
+export const createLogsSocket = (name: string, lines = 200, ansi = false) => {
+  const params = new URLSearchParams({ lines: String(lines) });
+  if (ansi) {
+    params.set("ansi", "1");
+  }
+  return new WebSocket(`${WS_BASE}/services/${name}/logs?${params.toString()}`);
 };

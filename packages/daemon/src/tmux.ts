@@ -147,20 +147,28 @@ export const isPaneDead = async (windowName: string) => {
   }
 };
 
-export const capturePane = async (windowName: string, lines: number) => {
+export const capturePane = async (
+  windowName: string,
+  lines: number,
+  options: { ansi?: boolean } = {}
+) => {
   const exists = await windowExists(windowName);
   if (!exists) {
     return "";
   }
   const start = -Math.abs(lines);
-  const { stdout } = await runTmux([
+  const args = [
     "capture-pane",
     "-t",
     `${SESSION_NAME}:${windowName}`,
     "-p",
     "-S",
     start.toString()
-  ]);
+  ];
+  if (options.ansi) {
+    args.push("-e");
+  }
+  const { stdout } = await runTmux(args);
   return stdout;
 };
 

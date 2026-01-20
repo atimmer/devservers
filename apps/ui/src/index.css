@@ -21,3 +21,13 @@ body {
   margin: 0;
   font-family: "Space Grotesk", "Segoe UI", sans-serif;
 }
+
+.logs-terminal .xterm,
+.logs-terminal .xterm-screen,
+.logs-terminal .xterm-viewport {
+  height: 100%;
+}
+
+.logs-terminal .xterm-viewport {
+  overflow-y: auto;
+}

@@ -373,10 +373,11 @@ server.post("/services/:name/restart", async (request, reply) => {
 
 server.get("/services/:name/logs", { websocket: true }, (connection, request) => {
   const params = request.params as { name: string };
-  const query = request.query as { lines?: string };
+  const query = request.query as { lines?: string; ansi?: string };
   const requestedLines = Number(query?.lines);
   const lines =
     Number.isFinite(requestedLines) && requestedLines > 0 ? Math.trunc(requestedLines) : 200;
+  const ansi = query?.ansi === "1" || query?.ansi === "true";
   let closed = false;
 
   const socket =
@@ -402,7 +403,7 @@ server.get("/services/:name/logs", { websocket: true }, (connection, request) =>
       return;
     }
     try {
-      const payload = await capturePane(params.name, lines);
+      const payload = await capturePane(params.name, lines, { ansi });
       socket.send(JSON.stringify({ type: "logs", payload }));
     } catch (error) {
       request.log.error({ err: error }, "Failed to capture logs");

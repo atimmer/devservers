@@ -1,5 +1,7 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import React from "react";
+import { Terminal } from "xterm";
+import { FitAddon } from "xterm-addon-fit";
 
 const ViewTransition =
   (React as { ViewTransition?: React.ComponentType<React.PropsWithChildren> }).ViewTransition ??
@@ -219,7 +221,10 @@ export default function App() {
   const [activeLogService, setActiveLogService] = useState<ServiceInfo | null>(null);
   const [logs, setLogs] = useState("");
   const [copied, setCopied] = useState(false);
-  const logsRef = useRef<HTMLPreElement | null>(null);
+  const [terminalContainer, setTerminalContainer] = useState<HTMLDivElement | null>(null);
+  const terminalRef = useRef<Terminal | null>(null);
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
+  const lastLogPayloadRef = useRef("");
   const shouldScrollRef = useRef(false);
   const [pendingStarts, setPendingStarts] = useState<string[]>([]);
   const pendingStartsRef = useRef<string[]>([]);
@@ -249,6 +254,31 @@ export default function App() {
   useEffect(() => {
     startFailuresRef.current = startFailures;
   }, [startFailures]);
+
+  const writeLogsToTerminal = useCallback((nextLogs: string, force = false) => {
+    const term = terminalRef.current;
+    if (!term) {
+      lastLogPayloadRef.current = nextLogs;
+      return;
+    }
+    const previous = lastLogPayloadRef.current;
+    if (force || !previous || !nextLogs.startsWith(previous)) {
+      term.reset();
+      if (nextLogs) {
+        term.write(nextLogs);
+      }
+    } else {
+      const delta = nextLogs.slice(previous.length);
+      if (delta) {
+        term.write(delta);
+      }
+    }
+    if (shouldScrollRef.current) {
+      term.scrollToBottom();
+      shouldScrollRef.current = false;
+    }
+    lastLogPayloadRef.current = nextLogs;
+  }, []);
 
   const refresh = useCallback(async () => {
     try {
@@ -355,31 +385,81 @@ export default function App() {
   }, [refresh]);
 
   useEffect(() => {
+    if (!activeLogService || !terminalContainer) {
+      return;
+    }
+
+    terminalContainer.innerHTML = "";
+    const term = new Terminal({
+      convertEol: true,
+      fontFamily:
+        'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+      fontSize: 12,
+      scrollback: 4000,
+      theme: {
+        background: "#0b0e12",
+        foreground: "#e2e8f0"
+      }
+    });
+    const fitAddon = new FitAddon();
+    term.loadAddon(fitAddon);
+    term.open(terminalContainer);
+    fitAddon.fit();
+    terminalRef.current = term;
+
+    if (typeof ResizeObserver !== "undefined") {
+      const resizeObserver = new ResizeObserver(() => {
+        fitAddon.fit();
+      });
+      resizeObserver.observe(terminalContainer);
+      resizeObserverRef.current = resizeObserver;
+    }
+
+    if (lastLogPayloadRef.current) {
+      writeLogsToTerminal(lastLogPayloadRef.current, true);
+    }
+
+    return () => {
+      resizeObserverRef.current?.disconnect();
+      resizeObserverRef.current = null;
+      term.dispose();
+      terminalRef.current = null;
+    };
+  }, [activeLogService, terminalContainer, writeLogsToTerminal]);
+
+  useEffect(() => {
     if (!activeLogService) {
       setLogs("");
       setCopied(false);
       shouldScrollRef.current = false;
+      lastLogPayloadRef.current = "";
       return;
     }
 
     setLogs("");
     shouldScrollRef.current = true;
-    const socket = createLogsSocket(activeLogService.name, 200);
+    const socket = createLogsSocket(activeLogService.name, 200, true);
     socket.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data) as { type: string; payload: string };
         if (payload.type === "logs") {
-          setLogs(payload.payload ?? "");
+          const nextLogs = payload.payload ?? "";
+          setLogs(nextLogs);
+          writeLogsToTerminal(nextLogs);
         }
       } catch {
-        setLogs(String(event.data ?? ""));
+        const nextLogs = String(event.data ?? "");
+        setLogs(nextLogs);
+        writeLogsToTerminal(nextLogs, true);
       }
     };
     socket.onerror = () => {
-      setLogs("Failed to stream logs.");
+      const message = "Failed to stream logs.";
+      setLogs(message);
+      writeLogsToTerminal(message, true);
     };
     return () => socket.close();
-  }, [activeLogService]);
+  }, [activeLogService, writeLogsToTerminal]);
 
   const handleAction = useCallback(
     async (action: "start" | "stop" | "restart", name: string) => {
@@ -433,20 +513,6 @@ export default function App() {
   const displayLogs = useMemo(() => logs.replace(/\s+$/, ""), [logs]);
   const isModalOpen = Boolean(activeLogService) || showForm;
   const CardTransition = isModalOpen ? React.Fragment : ViewTransition;
-
-  useEffect(() => {
-    if (!activeLogService || !shouldScrollRef.current || displayLogs.length === 0) {
-      return;
-    }
-    const raf = requestAnimationFrame(() => {
-      const container = logsRef.current;
-      if (container) {
-        container.scrollTop = container.scrollHeight;
-      }
-      shouldScrollRef.current = false;
-    });
-    return () => cancelAnimationFrame(raf);
-  }, [activeLogService, displayLogs]);
 
   const resetForm = () =>
     setFormState({
@@ -713,12 +779,14 @@ export default function App() {
                       {copied ? "Copied" : "Copy"}
                     </button>
                   </div>
-                  <pre
-                    ref={logsRef}
-                    className="mt-4 max-h-[50vh] overflow-auto rounded-2xl border border-white/10 bg-black/40 p-4 text-xs text-slate-200"
-                  >
-                    {displayLogs.length > 0 ? displayLogs : logs ? "" : "Waiting for logs..."}
-                  </pre>
+                  <div className="relative mt-4 h-[50vh] overflow-hidden rounded-2xl border border-white/10 bg-black/40 p-4 text-xs text-slate-200">
+                    <div ref={setTerminalContainer} className="logs-terminal h-full w-full" />
+                    {displayLogs.length > 0 || logs ? null : (
+                      <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-slate-400">
+                        Waiting for logs...
+                      </div>
+                    )}
+                  </div>
                 </div>
               </Dialog.Content>
             </Dialog.Portal>
