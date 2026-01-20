@@ -3,13 +3,19 @@
 ## Unreleased
 
 ### Changed
+- _None._
+
+### Fixed
+- _None._
+
+## 0.2.1 - 2026-01-20
+
+### Changed
 - Release checklist now only documents prep work plus tagging/pushing (publishing handled by GitHub Actions).
 - Condensed the UI header into a compact stats bar with a more prominent Add Service button, flush to the top with squared upper corners.
 - Updated the README UI screenshot.
 - CLI status output now includes service ports when known, with skills/docs noting how to retrieve them.
-- Open button now uses a link targetting a new tab.
-- Open button link now uses the same centered layout as other buttons.
-- Modals now sit above view transitions and use higher z-index overlays to prevent background bleed-through.
+- Open button now uses a link targeting a new tab, centered like the other buttons.
 
 ### Fixed
 - UI build now includes React type definitions for TypeScript.
@@ -17,6 +23,7 @@
 - Port registry tests now use bracketed env access to satisfy strict typing.
 - Start failures now clear the start spinner, surface an error badge, and highlight Logs until opened.
 - Dialogs now close on Escape using Radix UI.
+- Modals now sit above view transitions and use higher z-index overlays to prevent background bleed-through.
 
 ## 0.2.0 - 2026-01-19
 
