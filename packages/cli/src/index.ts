@@ -353,9 +353,12 @@ program
     if (!response.ok) {
       throw new Error(await response.text());
     }
-    const payload = (await response.json()) as { services: Array<{ name: string; status: string }> };
+    const payload = (await response.json()) as {
+      services: Array<{ name: string; status: string; port?: number }>;
+    };
     for (const service of payload.services) {
-      console.log(`${service.name}: ${service.status}`);
+      const portLabel = typeof service.port === "number" ? ` (port ${service.port})` : "";
+      console.log(`${service.name}: ${service.status}${portLabel}`);
     }
   });
 

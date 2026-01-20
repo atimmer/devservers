@@ -33,6 +33,7 @@ devservers install-skill devservers-register-service
 ```
 
 Note: `start`, `stop`, and `restart` will auto-start the local daemon/UI when they are not running.
+Note: `status` includes the current port when known (e.g. `api: running (port 3000)`).
 
 ## Options
 - `-c, --config <path>`: override config file path

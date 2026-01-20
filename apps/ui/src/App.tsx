@@ -594,19 +594,14 @@ export default function App() {
                             Utilities
                           </p>
                           {service.status === "running" && service.port ? (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const url = buildServiceUrl(service);
-                                if (!url) {
-                                  return;
-                                }
-                                window.open(url, "_blank", "noopener,noreferrer");
-                              }}
-                              className="h-9 w-full rounded-full border border-white/20 px-3 py-0 text-[11px] font-semibold uppercase leading-none tracking-[0.18em] text-white transition hover:border-white/60"
+                            <a
+                              href={buildServiceUrl(service) ?? undefined}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex h-9 w-full items-center justify-center rounded-full border border-white/20 px-3 text-[11px] font-semibold uppercase leading-none tracking-[0.18em] text-white transition hover:border-white/60"
                             >
                               Open
-                            </button>
+                            </a>
                           ) : null}
                           <button
                             type="button"

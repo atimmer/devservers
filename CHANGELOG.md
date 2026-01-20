@@ -6,6 +6,9 @@
 - Release checklist now only documents prep work plus tagging/pushing (publishing handled by GitHub Actions).
 - Condensed the UI header into a compact stats bar with a more prominent Add Service button, flush to the top with squared upper corners.
 - Updated the README UI screenshot.
+- CLI status output now includes service ports when known, with skills/docs noting how to retrieve them.
+- Open button now uses a link targetting a new tab.
+- Open button link now uses the same centered layout as other buttons.
 
 ### Fixed
 - UI build now includes React type definitions for TypeScript.
