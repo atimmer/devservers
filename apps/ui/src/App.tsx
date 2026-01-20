@@ -106,6 +106,13 @@ const parseEnv = (value: string) => {
   return Object.keys(env).length > 0 ? env : undefined;
 };
 
+const LOG_ERROR_PATTERN =
+  /\b(error|failed|fatal|exception|panic|traceback|unhandled|eaddrinuse|segmentation fault)\b/i;
+
+const stripAnsi = (value: string) => value.replace(/\x1b\[[0-9;]*m/g, "");
+
+const hasLogError = (value: string) => LOG_ERROR_PATTERN.test(stripAnsi(value));
+
 const ServiceStatusPill = ({ status }: { status: ServiceStatus }) => (
   <span
     className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] ${statusStyles[status]}`}
@@ -227,14 +234,10 @@ export default function App() {
   const lastLogPayloadRef = useRef("");
   const shouldScrollRef = useRef(false);
   const [pendingStarts, setPendingStarts] = useState<string[]>([]);
-  const pendingStartsRef = useRef<string[]>([]);
   const [pendingStops, setPendingStops] = useState<string[]>([]);
   const [pendingRestarts, setPendingRestarts] = useState<string[]>([]);
-  const [startFailures, setStartFailures] = useState<string[]>([]);
+  const [logErrors, setLogErrors] = useState<string[]>([]);
   const [logHighlights, setLogHighlights] = useState<string[]>([]);
-  const lastStartedAtRef = useRef<Record<string, string | undefined>>({});
-  const startFailuresRef = useRef<string[]>([]);
-  const errorServicesRef = useRef<Set<string>>(new Set());
   const [showForm, setShowForm] = useState(false);
   const [formMode, setFormMode] = useState<"add" | "edit">("add");
   const [editingService, setEditingService] = useState<ServiceInfo | null>(null);
@@ -246,14 +249,6 @@ export default function App() {
     env: "",
     portMode: "static" as PortMode
   });
-
-  useEffect(() => {
-    pendingStartsRef.current = pendingStarts;
-  }, [pendingStarts]);
-
-  useEffect(() => {
-    startFailuresRef.current = startFailures;
-  }, [startFailures]);
 
   const writeLogsToTerminal = useCallback((nextLogs: string, force = false) => {
     const term = terminalRef.current;
@@ -280,60 +275,31 @@ export default function App() {
     lastLogPayloadRef.current = nextLogs;
   }, []);
 
+  const markLogError = useCallback(
+    (serviceName: string) => {
+      setLogErrors((prev) => (prev.includes(serviceName) ? prev : [...prev, serviceName]));
+      setLogHighlights((prev) => {
+        if (activeLogService?.name === serviceName) {
+          return prev;
+        }
+        return prev.includes(serviceName) ? prev : [...prev, serviceName];
+      });
+    },
+    [activeLogService]
+  );
+
   const refresh = useCallback(async () => {
     try {
       setError(null);
       const data = await getServices();
       const serviceNames = new Set(data.map((service) => service.name));
       const serviceByName = new Map(data.map((service) => [service.name, service]));
-      const statusErrors = new Set(
-        data.filter((service) => service.status === "error").map((service) => service.name)
-      );
-      const failedStarts = new Set<string>();
-      const nextLastStartedAt: Record<string, string | undefined> = {};
-      for (const service of data) {
-        nextLastStartedAt[service.name] = service.lastStartedAt;
-      }
-
-      for (const name of pendingStartsRef.current) {
-        const service = serviceByName.get(name);
-        if (!service) {
-          continue;
-        }
-        const lastStartedAt = service.lastStartedAt;
-        const lastStartedChanged =
-          Boolean(lastStartedAt) && lastStartedAt !== lastStartedAtRef.current[name];
-        if (service.status === "error" || (service.status === "stopped" && lastStartedChanged)) {
-          failedStarts.add(name);
-        }
-      }
-      const nextStartFailures = new Set(
-        startFailuresRef.current.filter((name) => serviceNames.has(name))
-      );
-      for (const service of data) {
-        if (service.status === "running") {
-          nextStartFailures.delete(service.name);
-        }
-      }
-      for (const name of statusErrors) {
-        nextStartFailures.add(name);
-      }
-      for (const name of failedStarts) {
-        nextStartFailures.add(name);
-      }
-      const currentErrorNames = new Set(nextStartFailures);
-      const newErrorNames = new Set(
-        Array.from(currentErrorNames).filter((name) => !errorServicesRef.current.has(name))
-      );
 
       startTransition(() => {
         setServices(data);
         setPendingStarts((prev) =>
           prev.filter((name) => {
             if (!serviceNames.has(name)) {
-              return false;
-            }
-            if (failedStarts.has(name)) {
               return false;
             }
             const service = serviceByName.get(name);
@@ -358,18 +324,10 @@ export default function App() {
             return service ? service.status !== "stopped" : false;
           })
         );
-        setStartFailures(Array.from(nextStartFailures));
-        setLogHighlights((prev) => {
-          const next = new Set(prev.filter((name) => serviceNames.has(name)));
-          for (const name of newErrorNames) {
-            next.add(name);
-          }
-          return Array.from(next);
-        });
+        setLogErrors((prev) => prev.filter((name) => serviceNames.has(name)));
+        setLogHighlights((prev) => prev.filter((name) => serviceNames.has(name)));
         setLoading(false);
       });
-      errorServicesRef.current = currentErrorNames;
-      lastStartedAtRef.current = nextLastStartedAt;
     } catch (err) {
       startTransition(() => {
         setError(err instanceof Error ? err.message : String(err));
@@ -437,6 +395,7 @@ export default function App() {
     }
 
     setLogs("");
+    lastLogPayloadRef.current = "";
     shouldScrollRef.current = true;
     const socket = createLogsSocket(activeLogService.name, 200, true);
     socket.onmessage = (event) => {
@@ -444,6 +403,13 @@ export default function App() {
         const payload = JSON.parse(event.data) as { type: string; payload: string };
         if (payload.type === "logs") {
           const nextLogs = payload.payload ?? "";
+          const previousLogs = lastLogPayloadRef.current;
+          const delta = nextLogs.startsWith(previousLogs)
+            ? nextLogs.slice(previousLogs.length)
+            : nextLogs;
+          if (delta && hasLogError(delta)) {
+            markLogError(activeLogService.name);
+          }
           setLogs(nextLogs);
           writeLogsToTerminal(nextLogs);
         }
@@ -459,11 +425,15 @@ export default function App() {
       writeLogsToTerminal(message, true);
     };
     return () => socket.close();
-  }, [activeLogService, writeLogsToTerminal]);
+  }, [activeLogService, markLogError, writeLogsToTerminal]);
 
   const handleAction = useCallback(
     async (action: "start" | "stop" | "restart", name: string) => {
       setError(null);
+      if (action === "start" || action === "restart") {
+        setLogErrors((prev) => prev.filter((serviceName) => serviceName !== name));
+        setLogHighlights((prev) => prev.filter((serviceName) => serviceName !== name));
+      }
       if (action === "start") {
         setPendingStarts((prev) => (prev.includes(name) ? prev : [...prev, name]));
       }
@@ -498,17 +468,23 @@ export default function App() {
     [refresh]
   );
 
+  const logErrorSet = useMemo(() => new Set(logErrors), [logErrors]);
+  const displayStatus = useCallback(
+    (service: ServiceInfo): ServiceStatus => {
+      if (logErrorSet.has(service.name)) {
+        return "error";
+      }
+      return service.status === "error" ? "stopped" : service.status;
+    },
+    [logErrorSet]
+  );
   const statusSummary = useMemo(() => {
-    const counts = services.reduce(
-      (acc, service) => {
-        acc[service.status] += 1;
-        return acc;
-      },
-      { running: 0, stopped: 0, error: 0 }
-    );
+    const counts = { running: 0, stopped: 0, error: 0 };
+    for (const service of services) {
+      counts[displayStatus(service)] += 1;
+    }
     return counts;
-  }, [services]);
-  const startFailureSet = useMemo(() => new Set(startFailures), [startFailures]);
+  }, [services, displayStatus]);
   const logHighlightSet = useMemo(() => new Set(logHighlights), [logHighlights]);
   const displayLogs = useMemo(() => logs.replace(/\s+$/, ""), [logs]);
   const isModalOpen = Boolean(activeLogService) || showForm;
@@ -608,16 +584,16 @@ export default function App() {
                 No services yet. Add one to get started.
               </div>
             ) : (
-              services.map((service) => (
-                <CardTransition key={service.name}>
-                  <div className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-[0_0_40px_rgba(0,0,0,0.2)]">
+              services.map((service) => {
+                const status = displayStatus(service);
+                return (
+                  <CardTransition key={service.name}>
+                    <div className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-[0_0_40px_rgba(0,0,0,0.2)]">
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                       <div className="flex flex-col gap-3">
                         <div className="flex items-center gap-3">
                           <h2 className="text-xl font-semibold text-white">{service.name}</h2>
-                          <ServiceStatusPill
-                            status={startFailureSet.has(service.name) ? "error" : service.status}
-                          />
+                          <ServiceStatusPill status={status} />
                         </div>
                         <div className="text-xs uppercase tracking-[0.3em] text-slate-400">
                           {service.command}
@@ -643,7 +619,7 @@ export default function App() {
                           ) : null}
                         </div>
                       </div>
-                      <div className="flex flex-col items-start gap-4 sm:flex-none sm:flex-row sm:items-start">
+                        <div className="flex flex-col items-start gap-4 sm:flex-none sm:flex-row sm:items-start">
                         <div className="grid w-[140px] max-w-full content-start items-start gap-2">
                           <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500">
                             Controls
@@ -720,9 +696,10 @@ export default function App() {
                         </div>
                       </div>
                     </div>
-                  </div>
-                </CardTransition>
-              ))
+                    </div>
+                  </CardTransition>
+                );
+              })
             )}
           </section>
         </div>

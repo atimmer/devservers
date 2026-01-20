@@ -6,7 +6,7 @@
 - Logs viewer now renders ANSI color output via xterm.js when requested.
 
 ### Fixed
-- _None._
+- Slow-starting services no longer flip to error unless logs show an error.
 
 ## 0.2.1 - 2026-01-20
 
