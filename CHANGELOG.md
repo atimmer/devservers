@@ -4,6 +4,7 @@
 
 ### Changed
 - Logs viewer now renders ANSI color output via xterm.js when requested.
+- Logs dialog is now centered, larger, and the log panel fills the available height.
 
 ### Fixed
 - Slow-starting services no longer flip to error unless logs show an error.

@@ -715,8 +715,8 @@ export default function App() {
           {activeLogService ? (
             <Dialog.Portal>
               <Dialog.Overlay className="fixed inset-0 z-50 bg-black/60" />
-              <Dialog.Content className="fixed inset-0 z-50 flex items-end justify-center px-6 py-10 outline-none">
-                <div className="w-full max-w-4xl rounded-3xl border border-white/10 bg-[#0c1118] p-6">
+              <Dialog.Content className="fixed inset-0 z-50 flex items-center justify-center px-6 py-10 outline-none">
+                <div className="flex h-[85vh] w-full max-w-5xl flex-col rounded-3xl border border-white/10 bg-[#0c1118] p-6">
                   <div className="flex items-center justify-between gap-4">
                     <div>
                       <Dialog.Description className="text-xs uppercase tracking-[0.3em] text-slate-400">
@@ -756,7 +756,7 @@ export default function App() {
                       {copied ? "Copied" : "Copy"}
                     </button>
                   </div>
-                  <div className="relative mt-4 h-[50vh] overflow-hidden rounded-2xl border border-white/10 bg-black/40 p-4 text-xs text-slate-200">
+                  <div className="relative mt-4 min-h-0 flex-1 overflow-hidden rounded-2xl border border-white/10 bg-black/40 p-4 text-xs text-slate-200">
                     <div ref={setTerminalContainer} className="logs-terminal h-full w-full" />
                     {displayLogs.length > 0 || logs ? null : (
                       <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-slate-400">
