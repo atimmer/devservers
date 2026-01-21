@@ -806,8 +806,7 @@ export default function App() {
                     {[
                       { label: "Name", key: "name", placeholder: "api" },
                       { label: "Working dir", key: "cwd", placeholder: "/Users/anton/Code/api" },
-                      { label: "Command", key: "command", placeholder: "pnpm dev" },
-                      { label: "Port", key: "port", placeholder: "3000" }
+                      { label: "Command", key: "command", placeholder: "pnpm dev" }
                     ].map((field) => {
                       const isNameField = field.key === "name";
                       const isDisabled = formMode === "edit" && isNameField;
@@ -851,6 +850,24 @@ export default function App() {
                         <option value="registry">Port registry (use registry file)</option>
                       </select>
                     </label>
+
+                    {formState.portMode === "static" ? (
+                      <label className="grid gap-2 text-xs uppercase tracking-[0.3em] text-slate-400">
+                        Port
+                        <input
+                          type="text"
+                          value={formState.port}
+                          onChange={(event) =>
+                            setFormState((prev) => ({
+                              ...prev,
+                              port: event.target.value
+                            }))
+                          }
+                          placeholder="3000"
+                          className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm tracking-normal text-white outline-none transition focus:border-emerald-400/60"
+                        />
+                      </label>
+                    ) : null}
 
                     <label className="grid gap-2 text-xs uppercase tracking-[0.3em] text-slate-400">
                       Env (KEY=VALUE per line, $PORT supported)
