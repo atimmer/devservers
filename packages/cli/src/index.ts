@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { access, cp, mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import os from "node:os";
@@ -120,6 +121,8 @@ const require = createRequire(import.meta.url);
 const daemonEntry = require.resolve("@24letters/devservers-daemon");
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const skillsRoot = path.join(packageRoot, "skills");
+const packageJsonPath = fileURLToPath(new URL("../package.json", import.meta.url));
+const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf-8")) as { version?: string };
 
 const AGENT_HOME_ENV: Record<string, string> = {
   codex: "CODEX_HOME",
@@ -325,6 +328,7 @@ const program = new Command();
 program
   .name("devservers")
   .description("Local dev server manager")
+  .version(packageJson.version ?? "0.0.0")
   .option("-c, --config <path>", "config path")
   .option("--daemon <url>", "daemon base URL", `http://127.0.0.1:${DAEMON_PORT}`);
 

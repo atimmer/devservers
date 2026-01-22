@@ -109,7 +109,9 @@ const parseEnv = (value: string) => {
 const LOG_ERROR_PATTERN =
   /\b(error|failed|fatal|exception|panic|traceback|unhandled|eaddrinuse|segmentation fault)\b/i;
 
-const stripAnsi = (value: string) => value.replace(/\x1b\[[0-9;]*m/g, "");
+// eslint-disable-next-line no-control-regex
+const ANSI_ESCAPE_PATTERN = new RegExp("\\u001b\\[[0-9;]*m", "g");
+const stripAnsi = (value: string) => value.replace(ANSI_ESCAPE_PATTERN, "");
 
 const hasLogError = (value: string) => LOG_ERROR_PATTERN.test(stripAnsi(value));
 

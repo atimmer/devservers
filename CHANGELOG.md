@@ -2,12 +2,19 @@
 
 ## Unreleased
 
+## 0.2.2 - 2026-01-22
+
+### Added
+- CLI now supports `--version` output sourced from `package.json`.
+
 ### Changed
 - Logs viewer now renders ANSI color output via xterm.js when requested.
 - Logs dialog is now centered, larger, and the log panel fills the available height.
 - Service form now shows port only when port mode is static, with port mode listed first.
+- Publish workflow now runs automatically when tags are pushed.
 
 ### Fixed
+- ANSI log stripping regex no longer trips the ESLint control regex rule.
 - Slow-starting services no longer flip to error unless logs show an error.
 
 ## 0.2.1 - 2026-01-20
