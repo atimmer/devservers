@@ -11,6 +11,7 @@ import {
   CONFIG_ENV_VAR,
   DAEMON_PORT,
   DEFAULT_CONFIG_FILENAME,
+  createDependencyGraph,
   devServerConfigSchema,
   devServerServiceSchema,
   type DevServerConfig,
@@ -374,6 +375,7 @@ program
   .requiredOption("--command <command>")
   .option("--port <port>")
   .option("--port-mode <mode>", "port mode (static|detect|registry)")
+  .option("--depends-on <name...>", "Service dependencies")
   .option("--env <entry...>", "Environment variables (KEY=VALUE)")
   .action(async (options) => {
     const programOptions = program.opts<{ config?: string }>();
@@ -384,11 +386,13 @@ program
       command: options.command,
       port: options.port ? Number(options.port) : undefined,
       portMode: options.portMode,
-      env: parseEnvVars(options.env)
+      env: parseEnvVars(options.env),
+      dependsOn: options.dependsOn
     });
 
     const config = await readConfig(configPath);
     const nextConfig = upsertService(config, service);
+    createDependencyGraph(nextConfig.services);
     await writeConfig(configPath, nextConfig);
     console.log(`Saved ${service.name}`);
   });

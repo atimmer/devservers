@@ -13,6 +13,7 @@ devservers add \
   --name api \
   --cwd /Users/anton/Code/api \
   --command "pnpm dev" \
+  --depends-on db \
   --port 3000 \
   --port-mode detect \
   --env NODE_ENV=development
@@ -39,6 +40,7 @@ Note: `status` includes the current port when known (e.g. `api: running (port 30
 - `-c, --config <path>`: override config file path
 - `--daemon <url>`: daemon URL (default `http://127.0.0.1:4141`)
 ## Add options
+- `--depends-on <name...>`: declare service dependencies
 - `--port <port>`: service port (optional)
 - `--port-mode <mode>`: `static`, `detect`, or `registry`
 

@@ -15,6 +15,17 @@ describe("devServerServiceSchema", () => {
     expect(service.name).toBe("api-service_1");
   });
 
+  it("accepts dependsOn list", () => {
+    const service = devServerServiceSchema.parse({
+      name: "web",
+      cwd: "/Users/anton/Code/web",
+      command: "pnpm dev",
+      dependsOn: ["api", "db"]
+    });
+
+    expect(service.dependsOn).toEqual(["api", "db"]);
+  });
+
   it("rejects invalid name", () => {
     const result = devServerServiceSchema.safeParse({
       name: "api service",

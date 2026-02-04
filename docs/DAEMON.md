@@ -15,6 +15,11 @@ When UI assets are bundled, the daemon serves the UI at `/ui/` and redirects `/`
 - `POST /services/:name/restart`
 - `WS /services/:name/logs?lines=200[&ansi=1]` → streams `{ type: "logs", payload: string }`
 
+## Dependencies
+- `start` auto-starts dependencies first.
+- `stop` stops dependents before the target.
+- `restart` only restarts the target (dependents keep running).
+
 ## Status model
 - `stopped`: window does not exist
 - `running`: window exists and pane is alive

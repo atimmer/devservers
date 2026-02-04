@@ -61,6 +61,7 @@ the service does not yet have an entry (starting at 3100).
       "name": "api",
       "cwd": "/Users/anton/Code/api",
       "command": "pnpm dev",
+      "dependsOn": ["db"],
       "env": { "NODE_ENV": "development" },
       "port": 3000,
       "portMode": "static"
@@ -73,10 +74,16 @@ the service does not yet have an entry (starting at 3100).
 - `name` (string, required): alphanumeric + `._-` only. Used as the tmux window name.
 - `cwd` (string, required): working directory for the command.
 - `command` (string, required): shell command to run.
+- `dependsOn` (string[], optional): other service names that must be running first.
 - `env` (object, optional): environment variables injected before command.
 - `port` (number, optional): display-only metadata.
 - `portMode` (string, optional): `static`, `detect`, or `registry` (default `static`). `detect` updates `port` from logs.
 - `lastStartedAt` (string, optional): ISO timestamp of the last successful start (managed by the daemon).
+
+### Dependency behavior
+- Starting a service auto-starts its dependencies first.
+- Restarting a service does not stop dependents.
+- Stopping a service also stops dependents (in reverse order).
 
 ### Port registry format
 

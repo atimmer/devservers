@@ -1,16 +1,24 @@
 export type ServiceStatus = "stopped" | "running" | "error";
 export type PortMode = "static" | "detect" | "registry";
 
+export type RepoInfo = {
+  name: string;
+  root: string;
+  workspace: string;
+};
+
 export type ServiceInfo = {
   name: string;
   cwd: string;
   command: string;
+  dependsOn?: string[];
   env?: Record<string, string>;
   port?: number;
   portMode?: PortMode;
   lastStartedAt?: string;
   status: ServiceStatus;
   message?: string;
+  repo?: RepoInfo;
 };
 
 const DEFAULT_DAEMON_URL = "http://127.0.0.1:4141";
@@ -50,6 +58,13 @@ export const updateService = async (
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(service)
   });
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+};
+
+export const deleteService = async (name: string) => {
+  const response = await fetch(`${API_BASE}/services/${name}`, { method: "DELETE" });
   if (!response.ok) {
     throw new Error(await response.text());
   }

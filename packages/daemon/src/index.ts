@@ -8,7 +8,11 @@ import websocket from "@fastify/websocket";
 import Fastify, { type FastifyError } from "fastify";
 import {
   DAEMON_PORT,
+  collectDependencies,
+  collectDependents,
+  createDependencyGraph,
   devServerServiceSchema,
+  topoSort,
   type DevServerConfig,
   type DevServerService,
   type PortMode,
@@ -16,6 +20,7 @@ import {
 } from "@24letters/devservers-shared";
 import { readConfig, removeService, resolveConfigPath, upsertService, writeConfig } from "./config.js";
 import { ensureRegistryPort, readPortRegistry } from "./port-registry.js";
+import { resolveRepoInfo } from "./repo.js";
 import {
   capturePane,
   getServiceStatus,
@@ -88,6 +93,7 @@ const listServices = async (): Promise<ServiceInfo[]> => {
   const statuses = await Promise.all(
     config.services.map(async (service) => ({
       ...service,
+      repo: await resolveRepoInfo(service.cwd),
       port:
         resolvePortMode(service) === "registry"
           ? resolveServicePort(service, registryPorts)
@@ -222,13 +228,96 @@ const persistDetectedPort = async (service: DevServerService, port: number) => {
   await writeConfig(configPath, nextConfig);
 };
 
-const updateLastStartedAt = async (
-  config: DevServerConfig,
-  service: DevServerService,
-  lastStartedAt: string
-) => {
+const updateLastStartedAt = async (service: DevServerService, lastStartedAt: string) => {
+  const config = await readConfig(configPath);
   const nextConfig = upsertService(config, { ...service, lastStartedAt });
   await writeConfig(configPath, nextConfig);
+};
+
+type Logger = { error: (data: Record<string, unknown>, message: string) => void };
+
+const resolveStartSettings = async (
+  config: DevServerConfig,
+  service: DevServerService,
+  logger: Logger
+) => {
+  const portMode = resolvePortMode(service);
+  let resolvedPort: number | undefined;
+  if (portMode === "registry") {
+    try {
+      const reservedPorts = collectReservedPorts(config, service.name);
+      const registry = await ensureRegistryPort(configPath, service.name, {
+        preferredPort: service.port,
+        reservedPorts
+      });
+      resolvedPort = registry.port;
+    } catch (error) {
+      logger.error({ err: error }, "Failed to read port registry");
+      throw new Error("failed to read port registry");
+    }
+  } else {
+    resolvedPort = service.port;
+  }
+
+  const baseline =
+    portMode === "detect" ? await capturePane(service.name, PORT_LOG_LINES) : "";
+
+  return { portMode, resolvedPort, baseline };
+};
+
+const schedulePortDetection = (
+  service: DevServerService,
+  baseline: string,
+  logger: Logger
+) => {
+  void (async () => {
+    try {
+      const detectedPort = await detectPortFromLogs(service, baseline);
+      if (detectedPort) {
+        await persistDetectedPort(service, detectedPort);
+      }
+    } catch (error) {
+      logger.error({ err: error }, "Failed to detect service port");
+    }
+  })();
+};
+
+const startServiceWindow = async (
+  config: DevServerConfig,
+  service: DevServerService,
+  logger: Logger
+) => {
+  const { portMode, resolvedPort, baseline } = await resolveStartSettings(
+    config,
+    service,
+    logger
+  );
+  const started = await startWindow(service, { resolvedPort });
+  if (started) {
+    await updateLastStartedAt(service, new Date().toISOString());
+    if (portMode === "detect") {
+      schedulePortDetection(service, baseline, logger);
+    }
+  }
+};
+
+const restartServiceWindow = async (
+  config: DevServerConfig,
+  service: DevServerService,
+  logger: Logger
+) => {
+  const { portMode, resolvedPort, baseline } = await resolveStartSettings(
+    config,
+    service,
+    logger
+  );
+  const started = await restartWindow(service, { resolvedPort });
+  if (started) {
+    await updateLastStartedAt(service, new Date().toISOString());
+    if (portMode === "detect") {
+      schedulePortDetection(service, baseline, logger);
+    }
+  }
 };
 
 server.get("/services", async () => ({ services: await listServices() }));
@@ -241,6 +330,12 @@ server.post("/services", async (request, reply) => {
 
   const config = await readConfig(configPath);
   const nextConfig = upsertService(config, parsed.data);
+  try {
+    createDependencyGraph(nextConfig.services);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "invalid dependencies";
+    return reply.code(400).send({ error: message });
+  }
   await writeConfig(configPath, nextConfig);
   return { ok: true };
 });
@@ -258,6 +353,12 @@ server.put("/services/:name", async (request, reply) => {
 
   const config = await readConfig(configPath);
   const nextConfig = upsertService(config, parsed.data);
+  try {
+    createDependencyGraph(nextConfig.services);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "invalid dependencies";
+    return reply.code(400).send({ error: message });
+  }
   await writeConfig(configPath, nextConfig);
   return { ok: true };
 });
@@ -277,40 +378,25 @@ server.post("/services/:name/start", async (request, reply) => {
   if (!service) {
     return reply.code(404).send({ error: "service not found" });
   }
-  const portMode = resolvePortMode(service);
-  let resolvedPort: number | undefined;
-  if (portMode === "registry") {
-    try {
-      const reservedPorts = collectReservedPorts(config, service.name);
-      const registry = await ensureRegistryPort(configPath, service.name, {
-        preferredPort: service.port,
-        reservedPorts
-      });
-      resolvedPort = registry.port;
-    } catch (error) {
-      request.log.error({ err: error }, "Failed to read port registry");
-      return reply.code(500).send({ error: "failed to read port registry" });
-    }
-  } else {
-    resolvedPort = service.port;
+  let graph;
+  try {
+    graph = createDependencyGraph(config.services);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "invalid dependencies";
+    return reply.code(400).send({ error: message });
   }
-  const baseline =
-    portMode === "detect" ? await capturePane(service.name, PORT_LOG_LINES) : "";
-  const started = await startWindow(service, { resolvedPort });
-  if (started) {
-    await updateLastStartedAt(config, service, new Date().toISOString());
-    if (portMode === "detect") {
-      void (async () => {
-        try {
-          const detectedPort = await detectPortFromLogs(service, baseline);
-          if (detectedPort) {
-            await persistDetectedPort(service, detectedPort);
-          }
-        } catch (error) {
-          request.log.error({ err: error }, "Failed to detect service port");
-        }
-      })();
+
+  const order = topoSort(graph, collectDependencies(graph, service.name));
+  try {
+    for (const name of order) {
+      const target = graph.servicesByName.get(name);
+      if (target) {
+        await startServiceWindow(config, target, request.log);
+      }
     }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "failed to start service";
+    return reply.code(500).send({ error: message });
   }
   return { ok: true };
 });
@@ -322,7 +408,17 @@ server.post("/services/:name/stop", async (request, reply) => {
   if (!service) {
     return reply.code(404).send({ error: "service not found" });
   }
-  await stopWindow(service.name);
+  let graph;
+  try {
+    graph = createDependencyGraph(config.services);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "invalid dependencies";
+    return reply.code(400).send({ error: message });
+  }
+  const order = topoSort(graph, collectDependents(graph, service.name)).reverse();
+  for (const name of order) {
+    await stopWindow(name);
+  }
   return { ok: true };
 });
 
@@ -333,40 +429,28 @@ server.post("/services/:name/restart", async (request, reply) => {
   if (!service) {
     return reply.code(404).send({ error: "service not found" });
   }
-  const portMode = resolvePortMode(service);
-  let resolvedPort: number | undefined;
-  if (portMode === "registry") {
-    try {
-      const reservedPorts = collectReservedPorts(config, service.name);
-      const registry = await ensureRegistryPort(configPath, service.name, {
-        preferredPort: service.port,
-        reservedPorts
-      });
-      resolvedPort = registry.port;
-    } catch (error) {
-      request.log.error({ err: error }, "Failed to read port registry");
-      return reply.code(500).send({ error: "failed to read port registry" });
-    }
-  } else {
-    resolvedPort = service.port;
+  let graph;
+  try {
+    graph = createDependencyGraph(config.services);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "invalid dependencies";
+    return reply.code(400).send({ error: message });
   }
-  const baseline =
-    portMode === "detect" ? await capturePane(service.name, PORT_LOG_LINES) : "";
-  const started = await restartWindow(service, { resolvedPort });
-  if (started) {
-    await updateLastStartedAt(config, service, new Date().toISOString());
-    if (portMode === "detect") {
-      void (async () => {
-        try {
-          const detectedPort = await detectPortFromLogs(service, baseline);
-          if (detectedPort) {
-            await persistDetectedPort(service, detectedPort);
-          }
-        } catch (error) {
-          request.log.error({ err: error }, "Failed to detect service port");
-        }
-      })();
+  const dependencies = collectDependencies(graph, service.name).filter(
+    (name) => name !== service.name
+  );
+  const order = topoSort(graph, dependencies);
+  try {
+    for (const name of order) {
+      const target = graph.servicesByName.get(name);
+      if (target) {
+        await startServiceWindow(config, target, request.log);
+      }
     }
+    await restartServiceWindow(config, service, request.log);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "failed to restart service";
+    return reply.code(500).send({ error: message });
   }
   return { ok: true };
 });
