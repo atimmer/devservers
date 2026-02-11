@@ -108,10 +108,10 @@ services:
     command: "pnpm --filter=rendement-academy dev"
     port-mode: registry
     depends_on:
-      - api
+      - ucms
     env:
       - PORT=$PORT
-      - API_URL=http://localhost:${PORT:api}
+      - API_URL=http://localhost:${PORT:ucms}
 ```
 
 Supported keys per service:
@@ -121,6 +121,10 @@ Supported keys per service:
 - `env` or `environment` (optional object or `KEY=VALUE` list)
 - `port` (optional number)
 - `portMode`, `port_mode`, or `port-mode` (optional `static|detect|registry`)
+
+Service names in the file are local to the project. At runtime, daemon service names are prefixed as `<projectName>_<serviceName>` so one compose file can be reused across multiple checkouts.
+
+`depends_on` and `${PORT:<name>}` references can use local compose service names; the daemon rewrites local references to prefixed runtime names.
 
 Compose-loaded services can be started/stopped/restarted like normal services. In the UI they expose a `Config` button (read-only definition view) instead of edit controls.
 

@@ -30,20 +30,20 @@ services:
 
     expect(services).toHaveLength(2);
     expect(services[0]).toMatchObject({
-      name: "rendement-academy",
+      name: "academy_rendement-academy",
       command: "pnpm --filter=rendement-academy dev",
       portMode: "registry",
       dependsOn: ["postgres"],
       env: {
         PORT: "$PORT",
-        API_URL: "http://localhost:${PORT:api}"
+        API_URL: "http://localhost:${PORT:academy_api}"
       },
       cwd: "/tmp/academy",
       projectName: "academy",
       projectIsMonorepo: true
     });
     expect(services[1]).toMatchObject({
-      name: "api",
+      name: "academy_api",
       cwd: "/tmp/academy/apps/api",
       env: {
         NODE_ENV: "development",
@@ -72,9 +72,9 @@ services:
 
     expect(services).toHaveLength(2);
     expect(services[0]).toMatchObject({
-      name: "web",
+      name: "academy_web",
       command: "pnpm --filter web dev",
-      dependsOn: ["api"]
+      dependsOn: ["academy_api"]
     });
   });
 

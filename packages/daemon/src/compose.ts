@@ -22,6 +22,8 @@ export type ComposeManagedService = DevServerService & {
   sourceDefinition: Record<string, unknown>;
 };
 
+const PORT_REFERENCE_TOKEN = /\$\{PORT:([a-zA-Z0-9._-]+)\}/g;
+
 type ProjectState = {
   project: RegisteredProject;
   rootPath: string;
@@ -159,6 +161,42 @@ const readEnv = (input: Record<string, unknown>) => {
   throw new Error("env/environment must be an object or array");
 };
 
+const prefixServiceName = (projectName: string, serviceName: string) => {
+  const prefix = `${projectName}_`;
+  if (serviceName.startsWith(prefix)) {
+    return serviceName;
+  }
+  return `${prefix}${serviceName}`;
+};
+
+const rewriteLocalPortReferences = (
+  value: string,
+  localServiceNames: Set<string>,
+  projectName: string
+) => {
+  return value.replace(PORT_REFERENCE_TOKEN, (token, localName: string) => {
+    if (!localServiceNames.has(localName)) {
+      return token;
+    }
+    return `\${PORT:${prefixServiceName(projectName, localName)}}`;
+  });
+};
+
+const rewriteEnvPortReferences = (
+  env: Record<string, string> | undefined,
+  localServiceNames: Set<string>,
+  projectName: string
+) => {
+  if (!env) {
+    return undefined;
+  }
+  const next: Record<string, string> = {};
+  for (const [key, value] of Object.entries(env)) {
+    next[key] = rewriteLocalPortReferences(value, localServiceNames, projectName);
+  }
+  return next;
+};
+
 const resolveServiceCwd = (projectRoot: string, input: Record<string, unknown>) => {
   const raw = readString(input, ["cwd", "working_dir", "working-dir"]);
   if (!raw) {
@@ -185,21 +223,28 @@ export const parseComposeServices = (
   }
 
   const projectRoot = path.resolve(project.path);
+  const localServiceNames = new Set(Object.keys(rawServices));
   const services: ComposeManagedService[] = [];
-  for (const [name, rawDefinition] of Object.entries(rawServices)) {
+  for (const [localName, rawDefinition] of Object.entries(rawServices)) {
     const definition = asObject(rawDefinition);
     if (!definition) {
-      throw new Error(`Service "${name}" must be an object.`);
+      throw new Error(`Service "${localName}" must be an object.`);
     }
 
     const command = readCommand(definition);
     const sourceDefinition = { ...definition };
+    const dependsOn = readDependsOn(definition)?.map((dependencyName) => {
+      if (!localServiceNames.has(dependencyName)) {
+        return dependencyName;
+      }
+      return prefixServiceName(project.name, dependencyName);
+    });
     const service: ComposeManagedService = {
-      name,
+      name: prefixServiceName(project.name, localName),
       command,
       cwd: resolveServiceCwd(projectRoot, definition),
-      dependsOn: readDependsOn(definition),
-      env: readEnv(definition),
+      dependsOn,
+      env: rewriteEnvPortReferences(readEnv(definition), localServiceNames, project.name),
       port: readPort(definition),
       portMode: readPortMode(definition),
       lastStartedAt: readString(definition, ["lastStartedAt", "last-started-at"]),

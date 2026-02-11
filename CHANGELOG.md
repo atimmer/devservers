@@ -5,7 +5,7 @@
 ### Added
 - Added a muted delete action to the edit service modal.
 - Added service dependencies with auto-start ordering, dependent stops, restart-safe behavior, and env port templates for dependency services (`${PORT:service-name}`).
-- Added `registeredProjects` with `devservers-compose.yml` support, file watching, project references in UI, and compose service `Config` viewing.
+- Added `registeredProjects` with `devservers-compose.yml` support, file watching, project references in UI, compose service `Config` viewing, and automatic `<project>_` service-name prefixing so one definition can be reused across checkouts.
 - Added repo grouping plus workspace paths in the UI, backed by workspace/git detection.
 
 ## 0.2.2 - 2026-01-22
