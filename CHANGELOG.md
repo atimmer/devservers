@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.3.0 - 2026-02-11
+
 ### Added
 - Added a muted delete action to the edit service modal.
 - Added service dependencies with auto-start ordering, dependent stops, restart-safe behavior, and env port templates for dependency services (`${PORT:service-name}`).
