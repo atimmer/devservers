@@ -101,4 +101,8 @@ Service names must match `services[].name` in `devservers.json`.
 
 ### Port templates in env
 
-Env values may include `$PORT` or `${PORT}` to inject the resolved port. When `portMode` is `registry`, the port comes from the port registry; otherwise it uses `services[].port`.
+Env values may include:
+- `$PORT` or `${PORT}` to inject the current service's resolved port.
+- `${PORT:service-name}` to inject another service's resolved port (useful with `dependsOn`).
+
+When `portMode` is `registry`, the port comes from the port registry; otherwise it uses `services[].port`.

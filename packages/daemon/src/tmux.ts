@@ -15,8 +15,12 @@ const shellEscape = (value: string) => {
   return `'${escaped}'`;
 };
 
-const buildCommand = (service: DevServerService, resolvedPort?: number) => {
-  const env = resolveEnv(service.env, resolvedPort);
+const buildCommand = (
+  service: DevServerService,
+  resolvedPort?: number,
+  servicePorts?: Record<string, number | undefined>
+) => {
+  const env = resolveEnv(service.env, resolvedPort, servicePorts);
   if (!env || Object.keys(env).length === 0) {
     return service.command;
   }
@@ -77,10 +81,10 @@ const isPaneIdle = async (windowName: string) => {
 
 export const startWindow = async (
   service: DevServerService,
-  options?: { resolvedPort?: number }
+  options?: { resolvedPort?: number; servicePorts?: Record<string, number | undefined> }
 ): Promise<boolean> => {
   await ensureSession();
-  const command = buildCommand(service, options?.resolvedPort);
+  const command = buildCommand(service, options?.resolvedPort, options?.servicePorts);
 
   const exists = await windowExists(service.name);
   if (exists) {
@@ -125,7 +129,7 @@ export const stopWindow = async (windowName: string) => {
 
 export const restartWindow = async (
   service: DevServerService,
-  options?: { resolvedPort?: number }
+  options?: { resolvedPort?: number; servicePorts?: Record<string, number | undefined> }
 ): Promise<boolean> => {
   await stopWindow(service.name);
   await delay(300);

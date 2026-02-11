@@ -1017,7 +1017,7 @@ export default function App() {
                     ) : null}
 
                     <label className="grid gap-2 text-xs uppercase tracking-[0.3em] text-slate-400">
-                      Env (KEY=VALUE per line, $PORT supported)
+                      Env (KEY=VALUE per line, $PORT and ${"{PORT:service}"} supported)
                       <textarea
                         rows={4}
                         value={formState.env}
@@ -1025,7 +1025,7 @@ export default function App() {
                           setFormState((prev) => ({ ...prev, env: event.target.value }))
                         }
                         placeholder={
-                          "NODE_ENV=development\nPORT=$PORT\nNEXT_PUBLIC_URL=http://localhost:$PORT"
+                          "NODE_ENV=development\nPORT=$PORT\nAPI_URL=http://localhost:${PORT:api}\nNEXT_PUBLIC_URL=http://localhost:$PORT"
                         }
                         className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm tracking-normal text-white outline-none focus:border-emerald-400/60"
                       />

@@ -236,6 +236,37 @@ const updateLastStartedAt = async (service: DevServerService, lastStartedAt: str
 
 type Logger = { error: (data: Record<string, unknown>, message: string) => void };
 
+const isValidPort = (value: number | undefined): value is number => {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 && value <= 65535;
+};
+
+const resolveServicePorts = async (
+  config: DevServerConfig,
+  logger: Logger,
+  overrides: Record<string, number | undefined> = {}
+) => {
+  let registryPorts: Record<string, number> = {};
+  try {
+    const registry = await readPortRegistry(configPath);
+    registryPorts = registry.ports;
+  } catch (error) {
+    logger.error({ err: error }, "Failed to read port registry");
+  }
+
+  const resolved: Record<string, number | undefined> = {};
+  for (const item of config.services) {
+    resolved[item.name] = resolveServicePort(item, registryPorts);
+  }
+
+  for (const [name, port] of Object.entries(overrides)) {
+    if (isValidPort(port)) {
+      resolved[name] = port;
+    }
+  }
+
+  return resolved;
+};
+
 const resolveStartSettings = async (
   config: DevServerConfig,
   service: DevServerService,
@@ -292,7 +323,10 @@ const startServiceWindow = async (
     service,
     logger
   );
-  const started = await startWindow(service, { resolvedPort });
+  const servicePorts = await resolveServicePorts(config, logger, {
+    [service.name]: resolvedPort
+  });
+  const started = await startWindow(service, { resolvedPort, servicePorts });
   if (started) {
     await updateLastStartedAt(service, new Date().toISOString());
     if (portMode === "detect") {
@@ -311,7 +345,10 @@ const restartServiceWindow = async (
     service,
     logger
   );
-  const started = await restartWindow(service, { resolvedPort });
+  const servicePorts = await resolveServicePorts(config, logger, {
+    [service.name]: resolvedPort
+  });
+  const started = await restartWindow(service, { resolvedPort, servicePorts });
   if (started) {
     await updateLastStartedAt(service, new Date().toISOString());
     if (portMode === "detect") {
