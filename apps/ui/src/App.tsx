@@ -45,14 +45,20 @@ class ErrorBoundary extends React.Component<
   }
 }
 import {
+  addProject,
   addService,
   createLogsSocket,
+  deleteProject,
   deleteService,
+  getProjects,
+  getServiceConfigDefinition,
   getServices,
   restartService,
   startService,
   stopService,
   updateService,
+  type RegisteredProject,
+  type ServiceConfigDefinition,
   type ServiceInfo,
   type ServiceStatus,
   type PortMode
@@ -114,6 +120,13 @@ const parseEnv = (value: string) => {
     env[key] = rest.join("=");
   }
   return Object.keys(env).length > 0 ? env : undefined;
+};
+
+const formatConfigDefinition = (config: ServiceConfigDefinition | null) => {
+  if (!config) {
+    return "";
+  }
+  return JSON.stringify(config.definition, null, 2);
 };
 
 const LOG_ERROR_PATTERN =
@@ -235,9 +248,15 @@ const ServiceActionButtons = ({
 
 export default function App() {
   const [services, setServices] = useState<ServiceInfo[]>([]);
+  const [projects, setProjects] = useState<RegisteredProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeLogService, setActiveLogService] = useState<ServiceInfo | null>(null);
+  const [activeConfigService, setActiveConfigService] = useState<ServiceInfo | null>(null);
+  const [activeConfigDefinition, setActiveConfigDefinition] = useState<ServiceConfigDefinition | null>(
+    null
+  );
+  const [configLoading, setConfigLoading] = useState(false);
   const [logs, setLogs] = useState("");
   const [copied, setCopied] = useState(false);
   const [terminalContainer, setTerminalContainer] = useState<HTMLDivElement | null>(null);
@@ -251,6 +270,7 @@ export default function App() {
   const [logErrors, setLogErrors] = useState<string[]>([]);
   const [logHighlights, setLogHighlights] = useState<string[]>([]);
   const [showForm, setShowForm] = useState(false);
+  const [showProjectForm, setShowProjectForm] = useState(false);
   const [formMode, setFormMode] = useState<"add" | "edit">("add");
   const [editingService, setEditingService] = useState<ServiceInfo | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -263,6 +283,12 @@ export default function App() {
     portMode: "static" as PortMode,
     dependsOn: [] as string[]
   });
+  const [projectFormState, setProjectFormState] = useState({
+    name: "",
+    path: "",
+    isMonorepo: false
+  });
+  const [isSavingProject, setIsSavingProject] = useState(false);
 
   const writeLogsToTerminal = useCallback((nextLogs: string, force = false) => {
     const term = terminalRef.current;
@@ -305,12 +331,13 @@ export default function App() {
   const refresh = useCallback(async () => {
     try {
       setError(null);
-      const data = await getServices();
+      const [data, projectData] = await Promise.all([getServices(), getProjects()]);
       const serviceNames = new Set(data.map((service) => service.name));
       const serviceByName = new Map(data.map((service) => [service.name, service]));
 
       startTransition(() => {
         setServices(data);
+        setProjects(projectData);
         setPendingStarts((prev) =>
           prev.filter((name) => {
             if (!serviceNames.has(name)) {
@@ -501,7 +528,8 @@ export default function App() {
   }, [services, displayStatus]);
   const logHighlightSet = useMemo(() => new Set(logHighlights), [logHighlights]);
   const displayLogs = useMemo(() => logs.replace(/\s+$/, ""), [logs]);
-  const isModalOpen = Boolean(activeLogService) || showForm;
+  const isModalOpen =
+    Boolean(activeLogService) || Boolean(activeConfigService) || showForm || showProjectForm;
   const CardTransition = isModalOpen ? React.Fragment : ViewTransition;
   const dependencyOptions = useMemo(() => {
     return [...services.map((service) => service.name)].sort((a, b) => a.localeCompare(b));
@@ -605,6 +633,58 @@ export default function App() {
     }
   };
 
+  const closeProjectForm = () => {
+    setShowProjectForm(false);
+    setIsSavingProject(false);
+    setProjectFormState({ name: "", path: "", isMonorepo: false });
+  };
+
+  const submitProjectForm = async () => {
+    setError(null);
+    setIsSavingProject(true);
+    try {
+      await addProject({
+        name: projectFormState.name.trim(),
+        path: projectFormState.path.trim(),
+        isMonorepo: projectFormState.isMonorepo
+      });
+      closeProjectForm();
+      await refresh();
+    } catch (err) {
+      setIsSavingProject(false);
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const removeProjectRef = async (name: string) => {
+    const confirmed = window.confirm(`Remove project "${name}"?`);
+    if (!confirmed) {
+      return;
+    }
+    setError(null);
+    try {
+      await deleteProject(name);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const openConfigDefinition = async (service: ServiceInfo) => {
+    setError(null);
+    setActiveConfigService(service);
+    setActiveConfigDefinition(null);
+    setConfigLoading(true);
+    try {
+      const definition = await getServiceConfigDefinition(service.name);
+      setActiveConfigDefinition(definition);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setConfigLoading(false);
+    }
+  };
+
   return (
     <ErrorBoundary>
       <div className="relative min-h-full overflow-hidden bg-[#0b0e12] text-slate-100">
@@ -628,24 +708,70 @@ export default function App() {
                 </div>
               ))}
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                setFormMode("add");
-                setEditingService(null);
-                resetForm();
-                setShowForm(true);
-              }}
-              className="rounded-full bg-emerald-400 px-5 py-2 text-xs font-semibold uppercase tracking-wider text-slate-950 shadow-lg shadow-emerald-500/30 transition hover:bg-emerald-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200/80 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
-            >
-              Add Service
-            </button>
+            <div className="flex items-center gap-2">
+              <div className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-[11px] uppercase tracking-[0.2em] text-slate-300">
+                {projects.length} projects
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowProjectForm(true);
+                }}
+                className="rounded-full border border-white/20 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-white transition hover:border-white/60"
+              >
+                Add Project
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setFormMode("add");
+                  setEditingService(null);
+                  resetForm();
+                  setShowForm(true);
+                }}
+                className="rounded-full bg-emerald-400 px-5 py-2 text-xs font-semibold uppercase tracking-wider text-slate-950 shadow-lg shadow-emerald-500/30 transition hover:bg-emerald-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200/80 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+              >
+                Add Service
+              </button>
+            </div>
           </header>
 
           {error ? (
             <div className="rounded-2xl border border-rose-400/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
               {error}
             </div>
+          ) : null}
+
+          {projects.length > 0 ? (
+            <section className="grid gap-3 rounded-2xl border border-white/10 bg-white/5 p-4">
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                Registered projects
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {projects.map((project) => (
+                  <div
+                    key={project.name}
+                    className="flex items-center gap-2 rounded-full border border-white/15 bg-black/20 px-3 py-1.5 text-xs text-slate-200"
+                  >
+                    <span>{project.name}</span>
+                    {project.isMonorepo ? (
+                      <span className="text-[10px] uppercase tracking-wider text-slate-400">
+                        monorepo
+                      </span>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void removeProjectRef(project.name);
+                      }}
+                      className="rounded-full border border-white/20 px-2 py-0.5 text-[10px] uppercase tracking-wider text-slate-300 transition hover:border-white/50"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </section>
           ) : null}
 
           <section className="grid gap-6">
@@ -709,6 +835,12 @@ export default function App() {
                                 <span>No port yet</span>
                               )}
                               <span>Mode {portModeLabels[service.portMode ?? "static"]}</span>
+                              <span>
+                                Source{" "}
+                                {service.source === "compose"
+                                  ? `Compose${service.projectName ? ` (${service.projectName})` : ""}`
+                                  : "Config"}
+                              </span>
                               {service.env && Object.keys(service.env).length > 0 ? (
                                 <span>{Object.keys(service.env).length} env vars</span>
                               ) : null}
@@ -755,26 +887,38 @@ export default function App() {
                                   Open
                                 </a>
                               ) : null}
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setFormMode("edit");
-                                  setEditingService(service);
-                                  setFormState({
-                                    name: service.name,
-                                    cwd: service.cwd,
-                                    command: service.command,
-                                    port: service.port ? String(service.port) : "",
-                                    env: formatEnv(service.env),
-                                    portMode: service.portMode ?? "static",
-                                    dependsOn: service.dependsOn ?? []
-                                  });
-                                  setShowForm(true);
-                                }}
-                                className="h-9 w-full rounded-full border border-white/20 px-3 py-0 text-[11px] font-semibold uppercase leading-none tracking-[0.18em] text-white transition hover:border-white/60"
-                              >
-                                Edit
-                              </button>
+                              {service.source === "compose" ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    void openConfigDefinition(service);
+                                  }}
+                                  className="h-9 w-full rounded-full border border-white/20 px-3 py-0 text-[11px] font-semibold uppercase leading-none tracking-[0.18em] text-white transition hover:border-white/60"
+                                >
+                                  Config
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setFormMode("edit");
+                                    setEditingService(service);
+                                    setFormState({
+                                      name: service.name,
+                                      cwd: service.cwd,
+                                      command: service.command,
+                                      port: service.port ? String(service.port) : "",
+                                      env: formatEnv(service.env),
+                                      portMode: service.portMode ?? "static",
+                                      dependsOn: service.dependsOn ?? []
+                                    });
+                                    setShowForm(true);
+                                  }}
+                                  className="h-9 w-full rounded-full border border-white/20 px-3 py-0 text-[11px] font-semibold uppercase leading-none tracking-[0.18em] text-white transition hover:border-white/60"
+                                >
+                                  Edit
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 onClick={() => {
@@ -873,6 +1017,60 @@ export default function App() {
                       <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-slate-400">
                         Waiting for logs...
                       </div>
+                    )}
+                  </div>
+                </div>
+              </Dialog.Content>
+            </Dialog.Portal>
+          ) : null}
+        </Dialog.Root>
+
+        <Dialog.Root
+          open={Boolean(activeConfigService)}
+          onOpenChange={(open) => {
+            if (!open) {
+              setActiveConfigService(null);
+              setActiveConfigDefinition(null);
+              setConfigLoading(false);
+            }
+          }}
+        >
+          {activeConfigService ? (
+            <Dialog.Portal>
+              <Dialog.Overlay className="fixed inset-0 z-50 bg-black/60" />
+              <Dialog.Content className="fixed inset-0 z-50 flex items-center justify-center px-6 py-10 outline-none">
+                <div className="flex h-[75vh] w-full max-w-4xl flex-col rounded-3xl border border-white/10 bg-[#0c1118] p-6">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <Dialog.Description className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                        Config Definition
+                      </Dialog.Description>
+                      <Dialog.Title className="text-lg font-semibold text-white">
+                        {activeConfigService.name}
+                      </Dialog.Title>
+                    </div>
+                    <Dialog.Close asChild>
+                      <button
+                        type="button"
+                        className="rounded-full border border-white/20 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-white transition hover:border-white/60"
+                      >
+                        Close
+                      </button>
+                    </Dialog.Close>
+                  </div>
+                  <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-xs text-slate-300">
+                    <p>Source: {activeConfigDefinition?.source ?? activeConfigService.source ?? "unknown"}</p>
+                    <p className="mt-1 break-all text-slate-400">
+                      {activeConfigDefinition?.path ?? "Loading path..."}
+                    </p>
+                  </div>
+                  <div className="mt-4 min-h-0 flex-1 overflow-auto rounded-2xl border border-white/10 bg-black/40 p-4">
+                    {configLoading ? (
+                      <p className="text-sm text-slate-400">Loading definition…</p>
+                    ) : (
+                      <pre className="whitespace-pre-wrap text-xs text-slate-200">
+                        {formatConfigDefinition(activeConfigDefinition)}
+                      </pre>
                     )}
                   </div>
                 </div>
@@ -1063,6 +1261,107 @@ export default function App() {
                       {formMode === "edit" ? "Save Changes" : "Save Service"}
                     </button>
                     </div>
+                  </div>
+                </div>
+              </Dialog.Content>
+            </Dialog.Portal>
+          ) : null}
+        </Dialog.Root>
+
+        <Dialog.Root
+          open={showProjectForm}
+          onOpenChange={(open) => {
+            if (!open) {
+              closeProjectForm();
+            }
+          }}
+        >
+          {showProjectForm ? (
+            <Dialog.Portal>
+              <Dialog.Overlay className="fixed inset-0 z-50 bg-black/60" />
+              <Dialog.Content className="fixed inset-0 z-50 flex items-center justify-center px-6 py-10 outline-none">
+                <div className="w-full max-w-xl rounded-3xl border border-white/10 bg-[#0c1118] p-6">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <Dialog.Description className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                        Register Project
+                      </Dialog.Description>
+                      <Dialog.Title className="text-lg font-semibold text-white">
+                        Add devservers-compose.yml project
+                      </Dialog.Title>
+                    </div>
+                    <Dialog.Close asChild>
+                      <button
+                        type="button"
+                        className="rounded-full border border-white/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:border-white/60"
+                      >
+                        Close
+                      </button>
+                    </Dialog.Close>
+                  </div>
+
+                  <div className="mt-6 grid gap-4">
+                    <label className="grid gap-2 text-xs uppercase tracking-[0.3em] text-slate-400">
+                      Name
+                      <input
+                        type="text"
+                        value={projectFormState.name}
+                        onChange={(event) =>
+                          setProjectFormState((prev) => ({ ...prev, name: event.target.value }))
+                        }
+                        placeholder="academy"
+                        className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm tracking-normal text-white outline-none transition focus:border-emerald-400/60"
+                      />
+                    </label>
+
+                    <label className="grid gap-2 text-xs uppercase tracking-[0.3em] text-slate-400">
+                      Path
+                      <input
+                        type="text"
+                        value={projectFormState.path}
+                        onChange={(event) =>
+                          setProjectFormState((prev) => ({ ...prev, path: event.target.value }))
+                        }
+                        placeholder="/Users/anton/Code/academy"
+                        className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm tracking-normal text-white outline-none transition focus:border-emerald-400/60"
+                      />
+                    </label>
+
+                    <label className="flex items-center gap-3 text-xs uppercase tracking-[0.2em] text-slate-300">
+                      <input
+                        type="checkbox"
+                        checked={projectFormState.isMonorepo}
+                        onChange={(event) =>
+                          setProjectFormState((prev) => ({
+                            ...prev,
+                            isMonorepo: event.target.checked
+                          }))
+                        }
+                        className="h-4 w-4 rounded border-white/20 bg-transparent text-emerald-400 focus:ring-2 focus:ring-emerald-300/60"
+                      />
+                      Is monorepo
+                    </label>
+                  </div>
+
+                  <div className="mt-6 flex justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={closeProjectForm}
+                      disabled={isSavingProject}
+                      className="rounded-full border border-white/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:border-white/60 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void submitProjectForm();
+                      }}
+                      disabled={isSavingProject}
+                      className="rounded-full bg-emerald-500 px-5 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Save Project
+                    </button>
                   </div>
                 </div>
               </Dialog.Content>

@@ -6,7 +6,11 @@ When UI assets are bundled, the daemon serves the UI at `/ui/` and redirects `/`
 
 ## Endpoints
 
+- `GET /projects` → `{ projects: RegisteredProject[] }`
+- `POST /projects` → add/update a project reference
+- `DELETE /projects/:name` → remove a project reference
 - `GET /services` → `{ services: ServiceInfo[] }`
+- `GET /services/:name/config` → read service definition from config/compose source
 - `POST /services` → add or update a service
 - `PUT /services/:name` → update service by name
 - `DELETE /services/:name` → remove service
@@ -19,6 +23,8 @@ When UI assets are bundled, the daemon serves the UI at `/ui/` and redirects `/`
 - `start` auto-starts dependencies first.
 - `stop` stops dependents before the target.
 - `restart` only restarts the target (dependents keep running).
+
+Compose services (from `devservers-compose.yml`) participate in the same dependency graph as config-defined services.
 
 ## Status model
 - `stopped`: window does not exist

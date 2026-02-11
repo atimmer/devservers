@@ -76,6 +76,10 @@ Override with:
 - `--config /path/to/devservers.json` (CLI or daemon)
 - `DEVSERVER_CONFIG=/path/to/devservers.json`
 
+Project-level compose support:
+- Add project references in the UI (`Add Project`), each pointing to a repo path.
+- If that repo has `devservers-compose.yml`, services are auto-loaded and watched for changes.
+
 ## Skills (Agents)
 
 By default, skills install to `~/.<agent>/skills` (or `<AGENT>_HOME/skills` if set). Use `--dest` to override.

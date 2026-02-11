@@ -12,13 +12,23 @@ import {
   collectDependents,
   createDependencyGraph,
   devServerServiceSchema,
+  registeredProjectSchema,
   topoSort,
   type DevServerConfig,
   type DevServerService,
   type PortMode,
   type ServiceInfo
 } from "@24letters/devservers-shared";
-import { readConfig, removeService, resolveConfigPath, upsertService, writeConfig } from "./config.js";
+import {
+  readConfig,
+  removeRegisteredProject,
+  removeService,
+  resolveConfigPath,
+  upsertRegisteredProject,
+  upsertService,
+  writeConfig
+} from "./config.js";
+import { ComposeProjectRegistry } from "./compose.js";
 import { ensureRegistryPort, readPortRegistry } from "./port-registry.js";
 import { resolveRepoInfo } from "./repo.js";
 import {
@@ -34,6 +44,16 @@ const PORT_LOG_LINES = 200;
 const PORT_DETECT_POLL_MS = 500;
 const PORT_DETECT_TIMEOUT_MS = 15000;
 const PORT_REGEX = /(?:https?:\/\/)?(?:localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0):(\d{2,5})/gi;
+const SERVICE_SOURCES = {
+  config: "config",
+  compose: "compose"
+} as const;
+type ServiceSource = (typeof SERVICE_SOURCES)[keyof typeof SERVICE_SOURCES];
+type ServiceSourceMeta = {
+  source: ServiceSource;
+  projectName?: string;
+  projectIsMonorepo?: boolean;
+};
 
 const getArgValue = (flag: string) => {
   const index = process.argv.indexOf(flag);
@@ -47,6 +67,9 @@ const configPath = resolveConfigPath(getArgValue("--config"));
 const port = Number(getArgValue("--port") ?? DAEMON_PORT);
 
 const server = Fastify({ logger: true });
+const composeProjects = new ComposeProjectRegistry();
+const runtimeDetectedPorts = new Map<string, number>();
+const runtimeLastStartedAt = new Map<string, string>();
 
 server.setErrorHandler((error: FastifyError, request, reply) => {
   request.log.error({ err: error }, "Request failed");
@@ -69,6 +92,10 @@ await server.register(cors, {
 
 await server.register(websocket);
 
+server.addHook("onClose", async () => {
+  composeProjects.close();
+});
+
 const uiRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "ui");
 if (existsSync(uiRoot)) {
   await server.register(fastifyStatic, {
@@ -81,8 +108,56 @@ if (existsSync(uiRoot)) {
   });
 }
 
-const listServices = async (): Promise<ServiceInfo[]> => {
+const findService = (services: DevServerService[], name: string) => {
+  return services.find((service) => service.name === name);
+};
+
+type ServiceCatalog = {
+  config: DevServerConfig;
+  services: DevServerService[];
+  sources: Map<string, ServiceSourceMeta>;
+};
+
+const buildCatalogFromConfig = async (
+  config: DevServerConfig,
+  logger: Logger
+): Promise<ServiceCatalog> => {
+  await composeProjects.sync(config.registeredProjects, logger);
+  const composeServices = composeProjects.getServices();
+
+  const services: DevServerService[] = [];
+  const sources = new Map<string, ServiceSourceMeta>();
+
+  for (const service of config.services) {
+    if (sources.has(service.name)) {
+      throw new Error(`Duplicate service name: ${service.name}`);
+    }
+    sources.set(service.name, { source: SERVICE_SOURCES.config });
+    services.push(service);
+  }
+
+  for (const service of composeServices) {
+    if (sources.has(service.name)) {
+      throw new Error(`Duplicate service name: ${service.name}`);
+    }
+    sources.set(service.name, {
+      source: SERVICE_SOURCES.compose,
+      projectName: service.projectName,
+      projectIsMonorepo: service.projectIsMonorepo
+    });
+    services.push(service);
+  }
+
+  return { config, services, sources };
+};
+
+const resolveServiceCatalog = async (logger: Logger): Promise<ServiceCatalog> => {
   const config = await readConfig(configPath);
+  return await buildCatalogFromConfig(config, logger);
+};
+
+const listServices = async (): Promise<ServiceInfo[]> => {
+  const catalog = await resolveServiceCatalog(server.log);
   let registryPorts: Record<string, number> = {};
   try {
     const registry = await readPortRegistry(configPath);
@@ -91,21 +166,33 @@ const listServices = async (): Promise<ServiceInfo[]> => {
     server.log.error({ err: error }, "Failed to read port registry");
   }
   const statuses = await Promise.all(
-    config.services.map(async (service) => ({
-      ...service,
-      repo: await resolveRepoInfo(service.cwd),
-      port:
-        resolvePortMode(service) === "registry"
-          ? resolveServicePort(service, registryPorts)
-          : service.port,
-      status: await getServiceStatus(service)
-    }))
+    catalog.services.map(async (service) => {
+      const meta = catalog.sources.get(service.name);
+      const runtimeLastStarted = runtimeLastStartedAt.get(service.name);
+      return {
+        ...service,
+        lastStartedAt: service.lastStartedAt ?? runtimeLastStarted,
+        repo: await resolveRepoInfo(service.cwd),
+        port: resolveServicePort(service, registryPorts),
+        source: meta?.source,
+        projectName: meta?.projectName,
+        projectIsMonorepo: meta?.projectIsMonorepo,
+        status: await getServiceStatus(service)
+      } satisfies ServiceInfo;
+    })
   );
+  const liveNames = new Set(statuses.map((service) => service.name));
+  for (const name of runtimeDetectedPorts.keys()) {
+    if (!liveNames.has(name)) {
+      runtimeDetectedPorts.delete(name);
+    }
+  }
+  for (const name of runtimeLastStartedAt.keys()) {
+    if (!liveNames.has(name)) {
+      runtimeLastStartedAt.delete(name);
+    }
+  }
   return orderServices(statuses);
-};
-
-const findService = (services: DevServerService[], name: string) => {
-  return services.find((service) => service.name === name);
 };
 
 const orderServices = (services: ServiceInfo[]) => {
@@ -150,12 +237,15 @@ const resolveServicePort = (
   if (portMode === "registry") {
     return registryPorts[service.name];
   }
+  if (portMode === "detect") {
+    return runtimeDetectedPorts.get(service.name) ?? service.port;
+  }
   return service.port;
 };
 
-const collectReservedPorts = (config: DevServerConfig, currentName: string) => {
+const collectReservedPorts = (services: DevServerService[], currentName: string) => {
   const reserved = new Set<number>();
-  for (const service of config.services) {
+  for (const service of services) {
     if (service.name === currentName) {
       continue;
     }
@@ -215,33 +305,64 @@ const detectPortFromLogs = async (service: DevServerService, baseline: string) =
   return undefined;
 };
 
-const persistDetectedPort = async (service: DevServerService, port: number) => {
-  const config = await readConfig(configPath);
-  const current = findService(config.services, service.name);
-  if (!current) {
+type Logger = { error: (data: Record<string, unknown>, message: string) => void };
+
+const resolveSourceMeta = (
+  sources: Map<string, ServiceSourceMeta>,
+  serviceName: string
+): ServiceSourceMeta => {
+  return sources.get(serviceName) ?? { source: SERVICE_SOURCES.config };
+};
+
+const isComposeManagedService = (
+  sources: Map<string, ServiceSourceMeta>,
+  serviceName: string
+) => {
+  return resolveSourceMeta(sources, serviceName).source === SERVICE_SOURCES.compose;
+};
+
+const persistDetectedPort = async (
+  service: DevServerService,
+  port: number,
+  sourceMeta: ServiceSourceMeta
+) => {
+  runtimeDetectedPorts.set(service.name, port);
+  if (sourceMeta.source !== SERVICE_SOURCES.config) {
     return;
   }
-  if (current.port === port) {
+  const config = await readConfig(configPath);
+  const current = findService(config.services, service.name);
+  if (!current || current.port === port) {
     return;
   }
   const nextConfig = upsertService(config, { ...current, port });
   await writeConfig(configPath, nextConfig);
 };
 
-const updateLastStartedAt = async (service: DevServerService, lastStartedAt: string) => {
+const updateLastStartedAt = async (
+  service: DevServerService,
+  lastStartedAt: string,
+  sourceMeta: ServiceSourceMeta
+) => {
+  runtimeLastStartedAt.set(service.name, lastStartedAt);
+  if (sourceMeta.source !== SERVICE_SOURCES.config) {
+    return;
+  }
   const config = await readConfig(configPath);
-  const nextConfig = upsertService(config, { ...service, lastStartedAt });
+  const current = findService(config.services, service.name);
+  if (!current) {
+    return;
+  }
+  const nextConfig = upsertService(config, { ...current, lastStartedAt });
   await writeConfig(configPath, nextConfig);
 };
-
-type Logger = { error: (data: Record<string, unknown>, message: string) => void };
 
 const isValidPort = (value: number | undefined): value is number => {
   return typeof value === "number" && Number.isFinite(value) && value > 0 && value <= 65535;
 };
 
 const resolveServicePorts = async (
-  config: DevServerConfig,
+  services: DevServerService[],
   logger: Logger,
   overrides: Record<string, number | undefined> = {}
 ) => {
@@ -254,7 +375,7 @@ const resolveServicePorts = async (
   }
 
   const resolved: Record<string, number | undefined> = {};
-  for (const item of config.services) {
+  for (const item of services) {
     resolved[item.name] = resolveServicePort(item, registryPorts);
   }
 
@@ -268,7 +389,7 @@ const resolveServicePorts = async (
 };
 
 const resolveStartSettings = async (
-  config: DevServerConfig,
+  services: DevServerService[],
   service: DevServerService,
   logger: Logger
 ) => {
@@ -276,7 +397,7 @@ const resolveStartSettings = async (
   let resolvedPort: number | undefined;
   if (portMode === "registry") {
     try {
-      const reservedPorts = collectReservedPorts(config, service.name);
+      const reservedPorts = collectReservedPorts(services, service.name);
       const registry = await ensureRegistryPort(configPath, service.name, {
         preferredPort: service.port,
         reservedPorts
@@ -297,6 +418,7 @@ const resolveStartSettings = async (
 };
 
 const schedulePortDetection = (
+  sources: Map<string, ServiceSourceMeta>,
   service: DevServerService,
   baseline: string,
   logger: Logger
@@ -305,7 +427,8 @@ const schedulePortDetection = (
     try {
       const detectedPort = await detectPortFromLogs(service, baseline);
       if (detectedPort) {
-        await persistDetectedPort(service, detectedPort);
+        const sourceMeta = resolveSourceMeta(sources, service.name);
+        await persistDetectedPort(service, detectedPort, sourceMeta);
       }
     } catch (error) {
       logger.error({ err: error }, "Failed to detect service port");
@@ -314,50 +437,122 @@ const schedulePortDetection = (
 };
 
 const startServiceWindow = async (
-  config: DevServerConfig,
+  services: DevServerService[],
+  sources: Map<string, ServiceSourceMeta>,
   service: DevServerService,
   logger: Logger
 ) => {
+  const sourceMeta = resolveSourceMeta(sources, service.name);
   const { portMode, resolvedPort, baseline } = await resolveStartSettings(
-    config,
+    services,
     service,
     logger
   );
-  const servicePorts = await resolveServicePorts(config, logger, {
+  const servicePorts = await resolveServicePorts(services, logger, {
     [service.name]: resolvedPort
   });
   const started = await startWindow(service, { resolvedPort, servicePorts });
   if (started) {
-    await updateLastStartedAt(service, new Date().toISOString());
+    await updateLastStartedAt(service, new Date().toISOString(), sourceMeta);
     if (portMode === "detect") {
-      schedulePortDetection(service, baseline, logger);
+      schedulePortDetection(sources, service, baseline, logger);
     }
   }
 };
 
 const restartServiceWindow = async (
-  config: DevServerConfig,
+  services: DevServerService[],
+  sources: Map<string, ServiceSourceMeta>,
   service: DevServerService,
   logger: Logger
 ) => {
+  const sourceMeta = resolveSourceMeta(sources, service.name);
   const { portMode, resolvedPort, baseline } = await resolveStartSettings(
-    config,
+    services,
     service,
     logger
   );
-  const servicePorts = await resolveServicePorts(config, logger, {
+  const servicePorts = await resolveServicePorts(services, logger, {
     [service.name]: resolvedPort
   });
   const started = await restartWindow(service, { resolvedPort, servicePorts });
   if (started) {
-    await updateLastStartedAt(service, new Date().toISOString());
+    await updateLastStartedAt(service, new Date().toISOString(), sourceMeta);
     if (portMode === "detect") {
-      schedulePortDetection(service, baseline, logger);
+      schedulePortDetection(sources, service, baseline, logger);
     }
   }
 };
 
+server.get("/projects", async () => {
+  const config = await readConfig(configPath);
+  return { projects: config.registeredProjects };
+});
+
+server.post("/projects", async (request, reply) => {
+  const parsed = registeredProjectSchema.safeParse(request.body);
+  if (!parsed.success) {
+    return reply.code(400).send({ error: parsed.error.flatten() });
+  }
+  const config = await readConfig(configPath);
+  const nextConfig = upsertRegisteredProject(config, parsed.data);
+  await writeConfig(configPath, nextConfig);
+  await composeProjects.sync(nextConfig.registeredProjects, request.log);
+  return { ok: true };
+});
+
+server.delete("/projects/:name", async (request) => {
+  const params = request.params as { name: string };
+  const config = await readConfig(configPath);
+  const nextConfig = removeRegisteredProject(config, params.name);
+  await writeConfig(configPath, nextConfig);
+  await composeProjects.sync(nextConfig.registeredProjects, request.log);
+  return { ok: true };
+});
+
 server.get("/services", async () => ({ services: await listServices() }));
+
+server.get("/services/:name/config", async (request, reply) => {
+  const params = request.params as { name: string };
+  let catalog: ServiceCatalog;
+  try {
+    catalog = await resolveServiceCatalog(request.log);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "invalid dependencies";
+    return reply.code(400).send({ error: message });
+  }
+
+  const service = findService(catalog.services, params.name);
+  if (!service) {
+    return reply.code(404).send({ error: "service not found" });
+  }
+
+  const sourceMeta = resolveSourceMeta(catalog.sources, params.name);
+  if (sourceMeta.source === SERVICE_SOURCES.compose) {
+    const definition = composeProjects.getServiceDefinition(params.name);
+    if (!definition) {
+      return reply.code(404).send({ error: "service definition not found" });
+    }
+    return {
+      source: SERVICE_SOURCES.compose,
+      serviceName: params.name,
+      projectName: definition.projectName,
+      path: definition.composePath,
+      definition: definition.sourceDefinition
+    };
+  }
+
+  const configService = findService(catalog.config.services, params.name);
+  if (!configService) {
+    return reply.code(404).send({ error: "service definition not found" });
+  }
+  return {
+    source: SERVICE_SOURCES.config,
+    serviceName: params.name,
+    path: configPath,
+    definition: configService
+  };
+});
 
 server.post("/services", async (request, reply) => {
   const parsed = devServerServiceSchema.safeParse(request.body);
@@ -366,13 +561,29 @@ server.post("/services", async (request, reply) => {
   }
 
   const config = await readConfig(configPath);
-  const nextConfig = upsertService(config, parsed.data);
+  let currentCatalog: ServiceCatalog;
   try {
-    createDependencyGraph(nextConfig.services);
+    currentCatalog = await buildCatalogFromConfig(config, request.log);
   } catch (error) {
     const message = error instanceof Error ? error.message : "invalid dependencies";
     return reply.code(400).send({ error: message });
   }
+
+  if (isComposeManagedService(currentCatalog.sources, parsed.data.name)) {
+    return reply
+      .code(400)
+      .send({ error: "service is managed by devservers-compose.yml and cannot be edited here" });
+  }
+
+  const nextConfig = upsertService(config, parsed.data);
+  try {
+    const nextCatalog = await buildCatalogFromConfig(nextConfig, request.log);
+    createDependencyGraph(nextCatalog.services);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "invalid dependencies";
+    return reply.code(400).send({ error: message });
+  }
+
   await writeConfig(configPath, nextConfig);
   return { ok: true };
 });
@@ -389,9 +600,24 @@ server.put("/services/:name", async (request, reply) => {
   }
 
   const config = await readConfig(configPath);
+  let currentCatalog: ServiceCatalog;
+  try {
+    currentCatalog = await buildCatalogFromConfig(config, request.log);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "invalid dependencies";
+    return reply.code(400).send({ error: message });
+  }
+
+  if (isComposeManagedService(currentCatalog.sources, params.name)) {
+    return reply
+      .code(400)
+      .send({ error: "service is managed by devservers-compose.yml and cannot be edited here" });
+  }
+
   const nextConfig = upsertService(config, parsed.data);
   try {
-    createDependencyGraph(nextConfig.services);
+    const nextCatalog = await buildCatalogFromConfig(nextConfig, request.log);
+    createDependencyGraph(nextCatalog.services);
   } catch (error) {
     const message = error instanceof Error ? error.message : "invalid dependencies";
     return reply.code(400).send({ error: message });
@@ -400,24 +626,46 @@ server.put("/services/:name", async (request, reply) => {
   return { ok: true };
 });
 
-server.delete("/services/:name", async (request) => {
+server.delete("/services/:name", async (request, reply) => {
   const params = request.params as { name: string };
   const config = await readConfig(configPath);
+  let catalog: ServiceCatalog;
+  try {
+    catalog = await buildCatalogFromConfig(config, request.log);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "invalid dependencies";
+    return reply.code(400).send({ error: message });
+  }
+
+  if (isComposeManagedService(catalog.sources, params.name)) {
+    return reply
+      .code(400)
+      .send({ error: "service is managed by devservers-compose.yml and cannot be edited here" });
+  }
+
   const nextConfig = removeService(config, params.name);
   await writeConfig(configPath, nextConfig);
+  runtimeDetectedPorts.delete(params.name);
+  runtimeLastStartedAt.delete(params.name);
   return { ok: true };
 });
 
 server.post("/services/:name/start", async (request, reply) => {
   const params = request.params as { name: string };
-  const config = await readConfig(configPath);
-  const service = findService(config.services, params.name);
+  let catalog: ServiceCatalog;
+  try {
+    catalog = await resolveServiceCatalog(request.log);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "invalid dependencies";
+    return reply.code(400).send({ error: message });
+  }
+  const service = findService(catalog.services, params.name);
   if (!service) {
     return reply.code(404).send({ error: "service not found" });
   }
   let graph;
   try {
-    graph = createDependencyGraph(config.services);
+    graph = createDependencyGraph(catalog.services);
   } catch (error) {
     const message = error instanceof Error ? error.message : "invalid dependencies";
     return reply.code(400).send({ error: message });
@@ -428,7 +676,7 @@ server.post("/services/:name/start", async (request, reply) => {
     for (const name of order) {
       const target = graph.servicesByName.get(name);
       if (target) {
-        await startServiceWindow(config, target, request.log);
+        await startServiceWindow(catalog.services, catalog.sources, target, request.log);
       }
     }
   } catch (error) {
@@ -440,14 +688,20 @@ server.post("/services/:name/start", async (request, reply) => {
 
 server.post("/services/:name/stop", async (request, reply) => {
   const params = request.params as { name: string };
-  const config = await readConfig(configPath);
-  const service = findService(config.services, params.name);
+  let catalog: ServiceCatalog;
+  try {
+    catalog = await resolveServiceCatalog(request.log);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "invalid dependencies";
+    return reply.code(400).send({ error: message });
+  }
+  const service = findService(catalog.services, params.name);
   if (!service) {
     return reply.code(404).send({ error: "service not found" });
   }
   let graph;
   try {
-    graph = createDependencyGraph(config.services);
+    graph = createDependencyGraph(catalog.services);
   } catch (error) {
     const message = error instanceof Error ? error.message : "invalid dependencies";
     return reply.code(400).send({ error: message });
@@ -461,14 +715,20 @@ server.post("/services/:name/stop", async (request, reply) => {
 
 server.post("/services/:name/restart", async (request, reply) => {
   const params = request.params as { name: string };
-  const config = await readConfig(configPath);
-  const service = findService(config.services, params.name);
+  let catalog: ServiceCatalog;
+  try {
+    catalog = await resolveServiceCatalog(request.log);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "invalid dependencies";
+    return reply.code(400).send({ error: message });
+  }
+  const service = findService(catalog.services, params.name);
   if (!service) {
     return reply.code(404).send({ error: "service not found" });
   }
   let graph;
   try {
-    graph = createDependencyGraph(config.services);
+    graph = createDependencyGraph(catalog.services);
   } catch (error) {
     const message = error instanceof Error ? error.message : "invalid dependencies";
     return reply.code(400).send({ error: message });
@@ -481,10 +741,10 @@ server.post("/services/:name/restart", async (request, reply) => {
     for (const name of order) {
       const target = graph.servicesByName.get(name);
       if (target) {
-        await startServiceWindow(config, target, request.log);
+        await startServiceWindow(catalog.services, catalog.sources, target, request.log);
       }
     }
-    await restartServiceWindow(config, service, request.log);
+    await restartServiceWindow(catalog.services, catalog.sources, service, request.log);
   } catch (error) {
     const message = error instanceof Error ? error.message : "failed to restart service";
     return reply.code(500).send({ error: message });
@@ -547,6 +807,11 @@ server.get("/services/:name/logs", { websocket: true }, (connection, request) =>
 });
 
 try {
+  try {
+    await resolveServiceCatalog(server.log);
+  } catch (error) {
+    server.log.error({ err: error }, "Failed to load services on startup");
+  }
   await server.listen({ port, host: "127.0.0.1" });
 } catch (error) {
   server.log.error(error);

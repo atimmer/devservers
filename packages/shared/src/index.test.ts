@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { devServerConfigSchema, devServerServiceSchema } from "./index.js";
+import { devServerConfigSchema, devServerServiceSchema, registeredProjectSchema } from "./index.js";
 
 describe("devServerServiceSchema", () => {
   it("accepts valid service", () => {
@@ -64,5 +64,25 @@ describe("devServerConfigSchema", () => {
   it("accepts empty config", () => {
     const config = devServerConfigSchema.parse({ version: 1, services: [] });
     expect(config.services).toHaveLength(0);
+    expect(config.registeredProjects).toEqual([]);
+  });
+});
+
+describe("registeredProjectSchema", () => {
+  it("accepts valid project reference", () => {
+    const project = registeredProjectSchema.parse({
+      name: "academy",
+      path: "/Users/anton/Code/academy",
+      isMonorepo: true
+    });
+    expect(project.name).toBe("academy");
+  });
+
+  it("rejects invalid project name", () => {
+    const result = registeredProjectSchema.safeParse({
+      name: "academy repo",
+      path: "/Users/anton/Code/academy"
+    });
+    expect(result.success).toBe(false);
   });
 });

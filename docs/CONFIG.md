@@ -56,6 +56,13 @@ the service does not yet have an entry (starting at 3100).
 ```json
 {
   "version": 1,
+  "registeredProjects": [
+    {
+      "name": "academy",
+      "path": "/Users/anton/Code/rendement-academy",
+      "isMonorepo": true
+    }
+  ],
   "services": [
     {
       "name": "api",
@@ -71,6 +78,10 @@ the service does not yet have an entry (starting at 3100).
 ```
 
 ### Fields
+- `registeredProjects` (array, optional): project references that may contain `devservers-compose.yml`.
+  - `name` (string, required): project label.
+  - `path` (string, required): absolute path to project root.
+  - `isMonorepo` (boolean, optional): hint for UI display.
 - `name` (string, required): alphanumeric + `._-` only. Used as the tmux window name.
 - `cwd` (string, required): working directory for the command.
 - `command` (string, required): shell command to run.
@@ -84,6 +95,34 @@ the service does not yet have an entry (starting at 3100).
 - Starting a service auto-starts its dependencies first.
 - Restarting a service does not stop dependents.
 - Stopping a service also stops dependents (in reverse order).
+
+## Project compose file (`devservers-compose.yml`)
+
+If a registered project contains a `devservers-compose.yml` file, the daemon loads services from it and watches for file changes.
+
+Compose shape (docker-compose style):
+
+```yaml
+services:
+  rendement-academy:
+    command: "pnpm --filter=rendement-academy dev"
+    port-mode: registry
+    depends_on:
+      - api
+    env:
+      - PORT=$PORT
+      - API_URL=http://localhost:${PORT:api}
+```
+
+Supported keys per service:
+- `command` (required)
+- `cwd`, `working_dir`, or `working-dir` (optional; defaults to project root)
+- `dependsOn`, `depends_on`, or `depends-on` (optional array)
+- `env` or `environment` (optional object or `KEY=VALUE` list)
+- `port` (optional number)
+- `portMode`, `port_mode`, or `port-mode` (optional `static|detect|registry`)
+
+Compose-loaded services can be started/stopped/restarted like normal services. In the UI they expose a `Config` button (read-only definition view) instead of edit controls.
 
 ### Port registry format
 

@@ -57,7 +57,7 @@ const readConfig = async (configPath: string): Promise<DevServerConfig> => {
   } catch (error) {
     const err = error as NodeJS.ErrnoException;
     if (err.code === "ENOENT") {
-      return { version: 1, services: [] };
+      return { version: 1, services: [], registeredProjects: [] };
     }
     throw error;
   }

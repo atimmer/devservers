@@ -16,9 +16,26 @@ export type ServiceInfo = {
   port?: number;
   portMode?: PortMode;
   lastStartedAt?: string;
+  source?: "config" | "compose";
+  projectName?: string;
+  projectIsMonorepo?: boolean;
   status: ServiceStatus;
   message?: string;
   repo?: RepoInfo;
+};
+
+export type RegisteredProject = {
+  name: string;
+  path: string;
+  isMonorepo?: boolean;
+};
+
+export type ServiceConfigDefinition = {
+  source: "config" | "compose";
+  serviceName: string;
+  projectName?: string;
+  path: string;
+  definition: Record<string, unknown>;
 };
 
 const DEFAULT_DAEMON_URL = "http://127.0.0.1:4141";
@@ -68,6 +85,41 @@ export const deleteService = async (name: string) => {
   if (!response.ok) {
     throw new Error(await response.text());
   }
+};
+
+export const getProjects = async (): Promise<RegisteredProject[]> => {
+  const response = await fetch(`${API_BASE}/projects`);
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+  const payload = (await response.json()) as { projects: RegisteredProject[] };
+  return payload.projects;
+};
+
+export const addProject = async (project: RegisteredProject) => {
+  const response = await fetch(`${API_BASE}/projects`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(project)
+  });
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+};
+
+export const deleteProject = async (name: string) => {
+  const response = await fetch(`${API_BASE}/projects/${name}`, { method: "DELETE" });
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+};
+
+export const getServiceConfigDefinition = async (name: string): Promise<ServiceConfigDefinition> => {
+  const response = await fetch(`${API_BASE}/services/${name}/config`);
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+  return (await response.json()) as ServiceConfigDefinition;
 };
 
 const postAction = async (name: string, action: "start" | "stop" | "restart") => {

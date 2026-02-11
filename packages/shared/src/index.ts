@@ -24,12 +24,23 @@ export const devServerServiceSchema = z.object({
   lastStartedAt: z.string().datetime().optional()
 });
 
+export const registeredProjectSchema = z.object({
+  name: z
+    .string()
+    .min(1)
+    .regex(namePattern, "name must be alphanumeric with ._- only"),
+  path: z.string().min(1),
+  isMonorepo: z.boolean().optional()
+});
+
 export const devServerConfigSchema = z.object({
   version: z.literal(1),
-  services: z.array(devServerServiceSchema)
+  services: z.array(devServerServiceSchema),
+  registeredProjects: z.array(registeredProjectSchema).default([])
 });
 
 export type DevServerService = z.infer<typeof devServerServiceSchema>;
+export type RegisteredProject = z.infer<typeof registeredProjectSchema>;
 export type DevServerConfig = z.infer<typeof devServerConfigSchema>;
 
 export type ServiceStatus = "stopped" | "running" | "error";
@@ -44,6 +55,9 @@ export type ServiceInfo = DevServerService & {
   status: ServiceStatus;
   message?: string;
   repo?: RepoInfo;
+  source?: "config" | "compose";
+  projectName?: string;
+  projectIsMonorepo?: boolean;
 };
 
 export type DependencyGraph = {
