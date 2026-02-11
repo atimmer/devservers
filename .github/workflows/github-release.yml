@@ -1,0 +1,53 @@
+name: Create GitHub Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract release notes from changelog
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          version="${TAG_NAME#v}"
+          start_pattern="^## ${version}( - .*)?$"
+
+          if ! awk -v start="$start_pattern" '
+            BEGIN { in_section = 0; found = 0 }
+            $0 ~ start { in_section = 1; found = 1; next }
+            /^## / && in_section { exit }
+            in_section { print }
+            END {
+              if (!found) {
+                exit 1
+              }
+            }
+          ' CHANGELOG.md > RELEASE_NOTES.raw.md; then
+            echo "No changelog section found for version ${version}."
+            exit 1
+          fi
+
+          sed -e '/./,$!d' RELEASE_NOTES.raw.md > RELEASE_NOTES.md
+
+          if [ ! -s RELEASE_NOTES.md ]; then
+            echo "Changelog section for version ${version} is empty."
+            exit 1
+          fi
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body_path: RELEASE_NOTES.md
