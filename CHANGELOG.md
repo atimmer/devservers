@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Changed
+- UI now shows active services in a compact Started services section at the top, removes those running services from the detailed list, limits and slows service-name ViewTransition animation to only services being started, tightens started-service action-column spacing, uses compact icon actions for Config/Edit/Logs, keeps Open as the rightmost button with its icon on the right, normalizes larger icon sizing across these controls, and moves project unregister actions into each service working-directory label.
+
 ## 0.3.0 - 2026-02-11
 
 ### Added
