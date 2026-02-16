@@ -25,3 +25,4 @@
 - No logs loaded by default.
 - UI opens a WS stream to `WS /services/:name/logs` and receives tail output.
 - Uses `tmux capture-pane` to avoid separate log pipes.
+- Daemon request/error logs use Fastify logging; interactive terminal runs use pretty console formatting.

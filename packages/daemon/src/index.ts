@@ -66,7 +66,20 @@ const getArgValue = (flag: string) => {
 const configPath = resolveConfigPath(getArgValue("--config"));
 const port = Number(getArgValue("--port") ?? DAEMON_PORT);
 
-const server = Fastify({ logger: true });
+const logger = process.stdout.isTTY
+  ? {
+      transport: {
+        target: "pino-pretty",
+        options: {
+          colorize: true,
+          ignore: "pid,hostname",
+          translateTime: "HH:MM:ss"
+        }
+      }
+    }
+  : true;
+
+const server = Fastify({ logger });
 const composeProjects = new ComposeProjectRegistry();
 const runtimeDetectedPorts = new Map<string, number>();
 const runtimeLastStartedAt = new Map<string, string>();

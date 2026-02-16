@@ -4,6 +4,7 @@
 
 ### Changed
 - UI now shows active services in a compact Started services section at the top, removes those running services from the detailed list, keeps service ordering alphabetical (groups and services) instead of status-driven reordering, removes ViewTransition usage completely, adds service appear/disappear motion for start/stop flows using Motion `AnimatePresence` with height-based enter/exit transitions (with layout/popLayout) that trigger only after real status changes, tightens started-service action-column spacing, uses compact icon actions for Config/Edit/Logs, keeps Open as the rightmost button with its icon on the right, normalizes larger icon sizing across these controls, moves project unregister actions into each service working-directory label, makes long service edit dialogs scrollable, and caps dependency checklist height so actions remain reachable.
+- Daemon console logging now uses `pino-pretty` formatting when attached to an interactive terminal while preserving default structured logging in non-interactive environments.
 
 ### Fixed
 - `devservers bootstrap` now aligns daemon runtime with UI mode (`daemon` uses packaged daemon with `/ui/`, source-mode defaults to Vite hot reload via `--ui vite`) and auto-recovers local stale daemon sessions that respond on `/services` but are not serving `/ui/`.
