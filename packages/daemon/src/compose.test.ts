@@ -78,6 +78,45 @@ services:
     });
   });
 
+  it("parses managed env file path for compose services", () => {
+    const services = parseComposeServices(
+      {
+        name: "academy",
+        path: "/tmp/academy"
+      },
+      `
+services:
+  web:
+    command: "pnpm --filter web dev"
+    managed-env-file: ".env.local"
+`
+    );
+
+    expect(services[0]).toMatchObject({
+      name: "academy_web",
+      managedEnvFile: "/tmp/academy/.env.local"
+    });
+  });
+
+  it("supports managed env file default path when set to true", () => {
+    const services = parseComposeServices(
+      {
+        name: "academy",
+        path: "/tmp/academy"
+      },
+      `
+services:
+  web:
+    command: "pnpm --filter web dev"
+    managedEnvFile: true
+`
+    );
+
+    expect(services[0]).toMatchObject({
+      managedEnvFile: "/tmp/academy/.env"
+    });
+  });
+
   it("returns empty list when services key is missing", () => {
     const services = parseComposeServices(
       {
@@ -104,5 +143,23 @@ services:
 `
       )
     ).toThrow("Invalid port-mode value");
+  });
+
+  it("throws for invalid managed env file values", () => {
+    expect(() =>
+      parseComposeServices(
+        {
+          name: "academy",
+          path: "/tmp/academy"
+        },
+        `
+services:
+  api:
+    command: "pnpm dev"
+    managed-env-file:
+      path: ".env"
+`
+      )
+    ).toThrow("managed-env-file must be a string path or true");
   });
 });

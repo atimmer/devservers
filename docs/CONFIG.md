@@ -107,6 +107,7 @@ services:
   rendement-academy:
     command: "pnpm --filter=rendement-academy dev"
     port-mode: registry
+    managed-env-file: ".env"
     depends_on:
       - ucms
     env:
@@ -119,6 +120,7 @@ Supported keys per service:
 - `cwd`, `working_dir`, or `working-dir` (optional; defaults to project root)
 - `dependsOn`, `depends_on`, or `depends-on` (optional array)
 - `env` or `environment` (optional object or `KEY=VALUE` list)
+- `managedEnvFile`, `managed_env_file`, or `managed-env-file` (optional string path or `true`; compose-only managed `.env` block writer)
 - `port` (optional number)
 - `portMode`, `port_mode`, or `port-mode` (optional `static|detect|registry`)
 
@@ -149,3 +151,20 @@ Env values may include:
 - `${PORT:service-name}` to inject another service's resolved port (useful with `dependsOn`).
 
 When `portMode` is `registry`, the port comes from the port registry; otherwise it uses `services[].port`.
+
+### Managed `.env` block (compose only)
+
+When `managedEnvFile` (or snake/kebab-case variants) is set on a compose service, devservers writes that service's resolved `env` values into the target file before start/restart.
+
+- If set to `true`, the file path defaults to `<project-root>/.env`.
+- If set to a relative path, it is resolved from the compose project root.
+- Existing file content is preserved; only the managed block is inserted/replaced.
+- When the file already has content, devservers inserts two newline characters before the start marker.
+
+Managed entries are delimited as:
+
+```
+# - Managed by `devservers` - Start, do not edit.
+KEY=value
+# - Managed by `devservers` - End
+```

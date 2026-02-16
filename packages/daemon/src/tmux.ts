@@ -2,6 +2,7 @@ import { execa } from "execa";
 import { setTimeout as delay } from "node:timers/promises";
 import type { DevServerService, ServiceStatus } from "@24letters/devservers-shared";
 import { resolveEnv } from "./env.js";
+import { writeManagedEnvFile } from "./managed-env-file.js";
 
 const SESSION_NAME = "devservers";
 const IDLE_COMMANDS = new Set(["zsh", "bash", "sh", "fish"]);
@@ -15,12 +16,7 @@ const shellEscape = (value: string) => {
   return `'${escaped}'`;
 };
 
-const buildCommand = (
-  service: DevServerService,
-  resolvedPort?: number,
-  servicePorts?: Record<string, number | undefined>
-) => {
-  const env = resolveEnv(service.env, resolvedPort, servicePorts);
+const buildCommand = (service: DevServerService, env: Record<string, string> | undefined) => {
   if (!env || Object.keys(env).length === 0) {
     return service.command;
   }
@@ -29,6 +25,12 @@ const buildCommand = (
     .map(([key, value]) => `${key}=${shellEscape(value ?? "")}`)
     .join(" ");
   return `${envPrefix} ${service.command}`;
+};
+
+type StartWindowOptions = {
+  resolvedPort?: number;
+  servicePorts?: Record<string, number | undefined>;
+  managedEnvFile?: string;
 };
 
 export const ensureSession = async () => {
@@ -81,10 +83,14 @@ const isPaneIdle = async (windowName: string) => {
 
 export const startWindow = async (
   service: DevServerService,
-  options?: { resolvedPort?: number; servicePorts?: Record<string, number | undefined> }
+  options?: StartWindowOptions
 ): Promise<boolean> => {
   await ensureSession();
-  const command = buildCommand(service, options?.resolvedPort, options?.servicePorts);
+  const env = resolveEnv(service.env, options?.resolvedPort, options?.servicePorts);
+  if (options?.managedEnvFile) {
+    await writeManagedEnvFile(options.managedEnvFile, env);
+  }
+  const command = buildCommand(service, env);
 
   const exists = await windowExists(service.name);
   if (exists) {
@@ -129,7 +135,7 @@ export const stopWindow = async (windowName: string) => {
 
 export const restartWindow = async (
   service: DevServerService,
-  options?: { resolvedPort?: number; servicePorts?: Record<string, number | undefined> }
+  options?: StartWindowOptions
 ): Promise<boolean> => {
   await stopWindow(service.name);
   await delay(300);

@@ -19,6 +19,7 @@ export type ComposeManagedService = DevServerService & {
   projectName: string;
   projectIsMonorepo?: boolean;
   composePath: string;
+  managedEnvFile?: string;
   sourceDefinition: Record<string, unknown>;
 };
 
@@ -161,6 +162,34 @@ const readEnv = (input: Record<string, unknown>) => {
   throw new Error("env/environment must be an object or array");
 };
 
+const readManagedEnvFile = (
+  input: Record<string, unknown>,
+  projectRoot: string
+) => {
+  const raw =
+    input["managedEnvFile"] ?? input["managed_env_file"] ?? input["managed-env-file"];
+
+  if (raw === undefined || raw === null || raw === false || raw === "") {
+    return undefined;
+  }
+
+  if (raw === true) {
+    return path.join(projectRoot, ".env");
+  }
+
+  if (typeof raw !== "string" || raw.trim().length === 0) {
+    throw new Error("managed-env-file must be a string path or true");
+  }
+
+  const normalizedPath = raw.trim();
+
+  if (path.isAbsolute(normalizedPath)) {
+    return normalizedPath;
+  }
+
+  return path.resolve(projectRoot, normalizedPath);
+};
+
 const prefixServiceName = (projectName: string, serviceName: string) => {
   const prefix = `${projectName}_`;
   if (serviceName.startsWith(prefix)) {
@@ -245,6 +274,7 @@ export const parseComposeServices = (
       cwd: resolveServiceCwd(projectRoot, definition),
       dependsOn,
       env: rewriteEnvPortReferences(readEnv(definition), localServiceNames, project.name),
+      managedEnvFile: readManagedEnvFile(definition, projectRoot),
       port: readPort(definition),
       portMode: readPortMode(definition),
       lastStartedAt: readString(definition, ["lastStartedAt", "last-started-at"]),

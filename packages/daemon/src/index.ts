@@ -53,6 +53,7 @@ type ServiceSourceMeta = {
   source: ServiceSource;
   projectName?: string;
   projectIsMonorepo?: boolean;
+  managedEnvFile?: string;
 };
 
 const getArgValue = (flag: string) => {
@@ -156,7 +157,8 @@ const buildCatalogFromConfig = async (
     sources.set(service.name, {
       source: SERVICE_SOURCES.compose,
       projectName: service.projectName,
-      projectIsMonorepo: service.projectIsMonorepo
+      projectIsMonorepo: service.projectIsMonorepo,
+      managedEnvFile: service.managedEnvFile
     });
     services.push(service);
   }
@@ -464,7 +466,11 @@ const startServiceWindow = async (
   const servicePorts = await resolveServicePorts(services, logger, {
     [service.name]: resolvedPort
   });
-  const started = await startWindow(service, { resolvedPort, servicePorts });
+  const started = await startWindow(service, {
+    resolvedPort,
+    servicePorts,
+    managedEnvFile: sourceMeta.managedEnvFile
+  });
   if (started) {
     await updateLastStartedAt(service, new Date().toISOString(), sourceMeta);
     if (portMode === "detect") {
@@ -488,7 +494,11 @@ const restartServiceWindow = async (
   const servicePorts = await resolveServicePorts(services, logger, {
     [service.name]: resolvedPort
   });
-  const started = await restartWindow(service, { resolvedPort, servicePorts });
+  const started = await restartWindow(service, {
+    resolvedPort,
+    servicePorts,
+    managedEnvFile: sourceMeta.managedEnvFile
+  });
   if (started) {
     await updateLastStartedAt(service, new Date().toISOString(), sourceMeta);
     if (portMode === "detect") {
