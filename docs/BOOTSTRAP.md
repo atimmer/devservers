@@ -22,6 +22,12 @@ Restart the daemon window:
 devservers bootstrap --restart
 ```
 
+Run the UI through Vite (hot reload):
+
+```
+devservers bootstrap --ui vite
+```
+
 ## From source (dev)
 
 ```
@@ -35,13 +41,19 @@ Creates tmux session `devservers` with windows:
 Open the dev UI at:
 
 ```
-http://127.0.0.1:4142/
+http://localhost:4142/
 ```
 
 Restart dev windows:
 
 ```
 ./scripts/bootstrap --restart
+```
+
+Or run the CLI directly in source mode (defaults to Vite UI):
+
+```
+pnpm -C packages/cli dev bootstrap
 ```
 
 ## Attach

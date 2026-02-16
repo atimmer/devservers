@@ -33,6 +33,12 @@ Bootstrap the manager to verify everything is working:
 devservers bootstrap
 ```
 
+For UI hot reload during development:
+
+```
+devservers bootstrap --ui vite
+```
+
 Then, install the skill to your AI agent of choice:
 
 ```
@@ -130,7 +136,7 @@ pnpm run bootstrap
 Dev UI:
 
 ```
-http://127.0.0.1:4142/
+http://localhost:4142/
 ```
 
 ## Docs

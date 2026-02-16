@@ -46,6 +46,7 @@ Note: `status` includes the current port when known (e.g. `api: running (port 30
 
 ## Bootstrap options
 - `--port <port>`: daemon port (default `4141`)
+- `--ui <mode>`: `daemon` (serve bundled UI at `/ui/`) or `vite` (run Vite dev UI on `http://localhost:4142/`)
 - `--restart`: restart the manager daemon window
 
 ## Skill install options

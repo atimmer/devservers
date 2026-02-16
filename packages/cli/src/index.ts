@@ -120,7 +120,9 @@ const callDaemon = async (baseUrl: string, pathName: string, method: string) => 
 
 const require = createRequire(import.meta.url);
 const daemonEntry = require.resolve("@24letters/devservers-daemon");
-const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const cliEntryPath = fileURLToPath(import.meta.url);
+const packageRoot = path.resolve(path.dirname(cliEntryPath), "..");
+const runningFromSource = path.basename(path.dirname(cliEntryPath)) === "src";
 const skillsRoot = path.join(packageRoot, "skills");
 const packageJsonPath = fileURLToPath(new URL("../package.json", import.meta.url));
 const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf-8")) as { version?: string };
@@ -232,6 +234,10 @@ const tmuxStartWindow = (
 
 const localDaemonRoot = path.resolve(packageRoot, "..", "daemon");
 const localDaemonEntry = path.join(localDaemonRoot, "src", "index.ts");
+const localUiRoot = path.resolve(packageRoot, "..", "..", "apps", "ui");
+const localUiPackageJson = path.join(localUiRoot, "package.json");
+const DEV_UI_PORT = 4142;
+const DEV_UI_URL = `http://localhost:${DEV_UI_PORT}/`;
 
 const buildDaemonCommand = (entry: string, configPath: string, port: number) => {
   return [
@@ -258,8 +264,8 @@ const buildDevDaemonCommand = (configPath: string, port: number) => {
   ].join(" ");
 };
 
-const resolveDaemonCommand = async (configPath: string, port: number) => {
-  if (await pathExists(localDaemonEntry)) {
+const resolveDaemonCommand = async (configPath: string, port: number, useSourceDaemon: boolean) => {
+  if (useSourceDaemon && (await pathExists(localDaemonEntry))) {
     return buildDevDaemonCommand(configPath, port);
   }
   if (!(await pathExists(daemonEntry))) {
@@ -270,11 +276,16 @@ const resolveDaemonCommand = async (configPath: string, port: number) => {
   return buildDaemonCommand(daemonEntry, configPath, port);
 };
 
-const startDaemonWindow = async (configPath: string, port: number, restart: boolean) => {
+const startDaemonWindow = async (
+  configPath: string,
+  port: number,
+  restart: boolean,
+  useSourceDaemon = runningFromSource
+) => {
   const session = "devservers";
   const daemonWindow = "manager-daemon";
   const cwd = process.cwd();
-  const daemonCommand = await resolveDaemonCommand(configPath, port);
+  const daemonCommand = await resolveDaemonCommand(configPath, port, useSourceDaemon);
 
   if (!tmuxSessionExists(session)) {
     runTmux(["new-session", "-d", "-s", session, "-n", daemonWindow, "-c", cwd]);
@@ -282,6 +293,37 @@ const startDaemonWindow = async (configPath: string, port: number, restart: bool
   } else {
     tmuxStartWindow(session, daemonWindow, daemonCommand, cwd, restart);
   }
+};
+
+const buildDevUiCommand = (daemonBaseUrl: string) => {
+  return [
+    `VITE_DAEMON_URL=${shellQuote(daemonBaseUrl)}`,
+    "pnpm",
+    "-C",
+    shellQuote(localUiRoot),
+    "dev"
+  ].join(" ");
+};
+
+const startUiWindow = async (daemonBaseUrl: string, restart: boolean) => {
+  if (!(await pathExists(localUiPackageJson))) {
+    throw new Error(
+      "UI source not found for Vite mode. Run from the repo source tree or use `--ui daemon`."
+    );
+  }
+
+  const session = "devservers";
+  const uiWindow = "manager-ui";
+  const cwd = process.cwd();
+  const uiCommand = buildDevUiCommand(daemonBaseUrl);
+
+  if (!tmuxSessionExists(session)) {
+    runTmux(["new-session", "-d", "-s", session, "-n", uiWindow, "-c", cwd]);
+    runTmux(["send-keys", "-t", `${session}:${uiWindow}`, uiCommand, "C-m"]);
+    return;
+  }
+
+  tmuxStartWindow(session, uiWindow, uiCommand, cwd, restart);
 };
 
 const isLoopbackHost = (hostname: string) => {
@@ -297,6 +339,15 @@ const isDaemonReachable = async (baseUrl: string) => {
   }
 };
 
+const isDaemonUiReachable = async (baseUrl: string) => {
+  try {
+    const response = await fetch(`${baseUrl}/ui/`);
+    return response.ok;
+  } catch {
+    return false;
+  }
+};
+
 const waitForDaemon = async (baseUrl: string, attempts = 20, delayMs = 250) => {
   for (let i = 0; i < attempts; i += 1) {
     if (await isDaemonReachable(baseUrl)) {
@@ -307,7 +358,11 @@ const waitForDaemon = async (baseUrl: string, attempts = 20, delayMs = 250) => {
   return false;
 };
 
-const ensureDaemonRunning = async (baseUrl: string, configPath: string) => {
+const ensureDaemonRunning = async (
+  baseUrl: string,
+  configPath: string,
+  useSourceDaemon = runningFromSource
+) => {
   if (await isDaemonReachable(baseUrl)) {
     return;
   }
@@ -318,7 +373,7 @@ const ensureDaemonRunning = async (baseUrl: string, configPath: string) => {
   }
 
   const port = url.port ? Number(url.port) : DAEMON_PORT;
-  await startDaemonWindow(configPath, port, false);
+  await startDaemonWindow(configPath, port, false, useSourceDaemon);
   const ready = await waitForDaemon(baseUrl);
   if (!ready) {
     throw new Error("Daemon failed to start. Run `devservers bootstrap` to inspect.");
@@ -415,11 +470,19 @@ program
   .description("Start the manager daemon in tmux and serve the UI")
   .option("--config <path>", "config path")
   .option("--port <port>", "daemon port", String(DAEMON_PORT))
+  .option("--ui <mode>", "ui mode (daemon|vite)")
   .option("--restart", "restart the manager daemon window", false)
   .action(async (options) => {
     const globalOptions = program.opts<{ config?: string }>();
     const configPath = resolveConfigPath(options.config ?? globalOptions.config);
     const port = Number(options.port ?? DAEMON_PORT);
+    const requestedUiMode = options.ui ? String(options.ui).toLowerCase() : undefined;
+    const defaultUiMode = runningFromSource ? "vite" : "daemon";
+    const uiMode = requestedUiMode ?? defaultUiMode;
+    const useSourceDaemon = runningFromSource && uiMode === "vite";
+    if (uiMode !== "daemon" && uiMode !== "vite") {
+      throw new Error(`Invalid UI mode: ${options.ui}. Use "daemon" or "vite".`);
+    }
     if (!Number.isFinite(port)) {
       throw new Error(`Invalid port: ${options.port}`);
     }
@@ -428,17 +491,35 @@ program
     const baseUrl = `http://127.0.0.1:${port}`;
 
     if (options.restart) {
-      await startDaemonWindow(configPath, port, true);
+      await startDaemonWindow(configPath, port, true, useSourceDaemon);
       const ready = await waitForDaemon(baseUrl);
       if (!ready) {
         throw new Error("Daemon failed to start. Run `devservers bootstrap` to inspect.");
       }
     } else {
-      await ensureDaemonRunning(baseUrl, configPath);
+      await ensureDaemonRunning(baseUrl, configPath, useSourceDaemon);
+      if (uiMode === "daemon") {
+        const daemonUiReady = await isDaemonUiReachable(baseUrl);
+        if (!daemonUiReady && isLoopbackHost(new URL(baseUrl).hostname)) {
+          await startDaemonWindow(configPath, port, true, useSourceDaemon);
+          const ready = await waitForDaemon(baseUrl);
+          if (!ready || !(await isDaemonUiReachable(baseUrl))) {
+            throw new Error("Daemon started but UI is not reachable at /ui/.");
+          }
+        }
+      }
+    }
+
+    if (uiMode === "vite") {
+      await startUiWindow(baseUrl, Boolean(options.restart));
     }
 
     console.log(`Manager running in tmux session '${session}'.`);
-    console.log(`UI: ${baseUrl}/ui/`);
+    if (uiMode === "vite") {
+      console.log(`UI (Vite): ${DEV_UI_URL}`);
+    } else {
+      console.log(`UI: ${baseUrl}/ui/`);
+    }
     console.log(`Attach: tmux attach -t ${session}`);
   });
 
