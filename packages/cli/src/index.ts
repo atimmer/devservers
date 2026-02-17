@@ -425,6 +425,9 @@ program
   .name("devservers")
   .description("Local dev server manager")
   .version(packageJson.version ?? "0.0.0")
+  .helpOption("-h, --help", "show command overview")
+  .showHelpAfterError("(run with --help for command overview)")
+  .addHelpText("after", "\nTip: run `devservers <command> --help` for command-specific options.")
   .option("-c, --config <path>", "config path")
   .option("--daemon <url>", "daemon base URL", `http://127.0.0.1:${DAEMON_PORT}`);
 

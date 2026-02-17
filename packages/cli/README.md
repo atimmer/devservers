@@ -12,6 +12,12 @@ Start the manager (daemon + UI):
 devservers bootstrap
 ```
 
+See CLI command overview:
+
+```
+devservers --help
+```
+
 Run UI through Vite (hot reload):
 
 ```

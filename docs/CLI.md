@@ -2,6 +2,12 @@
 
 Binary name: `devservers`
 
+Overview:
+
+```
+devservers --help
+```
+
 ## Commands
 
 ```
@@ -40,6 +46,7 @@ Note: `status` includes the current port when known (e.g. `api: running (port 30
 Note: `url <service>` prints a full local URL for running services (e.g. `http://localhost:3000/`).
 
 ## Options
+- `-h, --help`: show command overview
 - `-c, --config <path>`: override config file path
 - `--daemon <url>`: daemon URL (default `http://127.0.0.1:4141`)
 ## Add options

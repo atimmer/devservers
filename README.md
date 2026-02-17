@@ -33,6 +33,12 @@ Bootstrap the manager to verify everything is working:
 devservers bootstrap
 ```
 
+See CLI command overview:
+
+```
+devservers --help
+```
+
 For UI hot reload during development:
 
 ```

@@ -12,6 +12,12 @@ Rule: Use CLI only. Do not edit config files directly or interact with internal 
 
 ## Workflow
 
+Quick overview of available CLI commands:
+
+```
+devservers --help
+```
+
 ### 1) Start or restart the service
 
 ```
