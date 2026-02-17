@@ -47,14 +47,11 @@ Verify:
 devservers list
 ```
 
-Port lookup (when running):
+URL lookup (when running):
 
 ```
-devservers status
+devservers url <name>
 ```
-
-- The status output includes the current port when known (e.g. `service: running (port 3000)`).
-- For `detect` or `registry` modes, the port appears once it is discovered/assigned.
 
 ### 3) Start service (optional)
 

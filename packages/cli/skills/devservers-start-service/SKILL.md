@@ -39,6 +39,12 @@ devservers status
 The status output includes the current port when known (e.g. `service: running (port 3000)`).
 For `detect` or `registry` modes, the port appears once it is discovered/assigned.
 
+### 4) Get the full local URL
+
+```
+devservers url <name>
+```
+
 ## Notes
 
 - If a CLI call fails due to connectivity, ask the user to start the manager and retry.

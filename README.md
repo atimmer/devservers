@@ -69,6 +69,12 @@ devservers stop api
 devservers restart api
 ```
 
+Get the full local URL for a running service:
+
+```
+devservers url api
+```
+
 ## Config
 
 Default config path (macOS):

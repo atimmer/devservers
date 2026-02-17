@@ -9,6 +9,8 @@ devservers list
 
 devservers status
 
+devservers url api
+
 devservers add \
   --name api \
   --cwd /Users/anton/Code/api \
@@ -33,8 +35,9 @@ devservers install-skill
 devservers install-skill devservers-register-service
 ```
 
-Note: `start`, `stop`, and `restart` will auto-start the local daemon/UI when they are not running.
+Note: `start`, `stop`, `restart`, and `url` will auto-start the local daemon/UI when they are not running.
 Note: `status` includes the current port when known (e.g. `api: running (port 3000)`).
+Note: `url <service>` prints a full local URL for running services (e.g. `http://localhost:3000/`).
 
 ## Options
 - `-c, --config <path>`: override config file path
@@ -43,6 +46,11 @@ Note: `status` includes the current port when known (e.g. `api: running (port 30
 - `--depends-on <name...>`: declare service dependencies
 - `--port <port>`: service port (optional)
 - `--port-mode <mode>`: `static`, `detect`, or `registry`
+
+## URL options
+- `--scheme <scheme>`: URL scheme (default `http`)
+- `--host <host>`: URL host (default `localhost`)
+- `--path <path>`: URL path (default `/`)
 
 ## Bootstrap options
 - `--port <port>`: daemon port (default `4141`)

@@ -118,6 +118,46 @@ const callDaemon = async (baseUrl: string, pathName: string, method: string) => 
   }
 };
 
+type DaemonServiceSummary = {
+  name: string;
+  status: string;
+  port?: number;
+};
+
+const fetchDaemonServices = async (baseUrl: string): Promise<DaemonServiceSummary[]> => {
+  const response = await fetch(`${baseUrl}/services`);
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+  const payload = (await response.json()) as {
+    services: DaemonServiceSummary[];
+  };
+  return payload.services;
+};
+
+const normalizeUrlPath = (input?: string) => {
+  if (!input) {
+    return "/";
+  }
+  return input.startsWith("/") ? input : `/${input}`;
+};
+
+const formatServiceUrl = (scheme: string, host: string, port: number, pathname: string) => {
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+    throw new Error(`Cannot format URL: invalid port ${String(port)}`);
+  }
+  try {
+    const url = new URL(`${scheme}://${host}`);
+    url.port = String(port);
+    url.pathname = normalizeUrlPath(pathname);
+    return url.toString();
+  } catch (error) {
+    throw new Error(
+      `Cannot format URL: ${error instanceof Error ? error.message : "invalid URL inputs"}`
+    );
+  }
+};
+
 const require = createRequire(import.meta.url);
 const daemonEntry = require.resolve("@24letters/devservers-daemon");
 const cliEntryPath = fileURLToPath(import.meta.url);
@@ -409,18 +449,46 @@ program
   .description("Show running status from daemon")
   .action(async () => {
     const options = program.opts<{ daemon: string }>();
-    const response = await fetch(`${options.daemon}/services`);
-    if (!response.ok) {
-      throw new Error(await response.text());
-    }
-    const payload = (await response.json()) as {
-      services: Array<{ name: string; status: string; port?: number }>;
-    };
-    for (const service of payload.services) {
+    const services = await fetchDaemonServices(options.daemon);
+    for (const service of services) {
       const portLabel = typeof service.port === "number" ? ` (port ${service.port})` : "";
       console.log(`${service.name}: ${service.status}${portLabel}`);
     }
   });
+
+program
+  .command("url")
+  .description("Print full local URL for a running service")
+  .argument("<service>")
+  .option("--scheme <scheme>", "URL scheme", "http")
+  .option("--host <host>", "URL host", "localhost")
+  .option("--path <path>", "URL path", "/")
+  .action(
+    async (
+      serviceName: string,
+      options: { scheme: string; host: string; path: string }
+    ) => {
+      const programOptions = program.opts<{ daemon: string; config?: string }>();
+      const configPath = resolveConfigPath(programOptions.config);
+      await ensureDaemonRunning(programOptions.daemon, configPath);
+      const services = await fetchDaemonServices(programOptions.daemon);
+      const service = services.find((entry) => entry.name === serviceName);
+      if (!service) {
+        throw new Error(`Unknown service: ${serviceName}`);
+      }
+      if (service.status !== "running") {
+        throw new Error(
+          `Service '${serviceName}' is ${service.status}. Start it first, then retry.`
+        );
+      }
+      if (typeof service.port !== "number") {
+        throw new Error(
+          `Service '${serviceName}' is running but no port is known yet. Retry in a few seconds.`
+        );
+      }
+      console.log(formatServiceUrl(options.scheme, options.host, service.port, options.path));
+    }
+  );
 
 program
   .command("add")

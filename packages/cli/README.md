@@ -24,6 +24,12 @@ Add a service:
 devservers add --name api --cwd /Users/you/Code/api --command "pnpm dev" --port 3000
 ```
 
+Get the full local URL for a running service:
+
+```
+devservers url api
+```
+
 Open the UI:
 
 ```
