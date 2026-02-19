@@ -404,6 +404,7 @@ export default function App() {
   const [showProjectForm, setShowProjectForm] = useState(false);
   const [formMode, setFormMode] = useState<"add" | "edit">("add");
   const [editingService, setEditingService] = useState<ServiceInfo | null>(null);
+  const [serviceFormError, setServiceFormError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [formState, setFormState] = useState({
     name: "",
@@ -741,12 +742,14 @@ export default function App() {
     setShowForm(false);
     setFormMode("add");
     setEditingService(null);
+    setServiceFormError(null);
     setIsDeleting(false);
     resetForm();
   };
 
   const submitForm = async () => {
     setError(null);
+    setServiceFormError(null);
     const name = formState.name.trim();
     const payload = {
       name,
@@ -767,7 +770,7 @@ export default function App() {
       closeForm();
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setServiceFormError(err instanceof Error ? err.message : String(err));
     }
   };
 
@@ -782,6 +785,7 @@ export default function App() {
       return;
     }
     setError(null);
+    setServiceFormError(null);
     setIsDeleting(true);
     try {
       await deleteService(editingService.name);
@@ -789,7 +793,7 @@ export default function App() {
       await refresh();
     } catch (err) {
       setIsDeleting(false);
-      setError(err instanceof Error ? err.message : String(err));
+      setServiceFormError(err instanceof Error ? err.message : String(err));
     }
   };
 
@@ -848,6 +852,7 @@ export default function App() {
   const openServiceEditor = useCallback((service: ServiceInfo) => {
     setFormMode("edit");
     setEditingService(service);
+    setServiceFormError(null);
     setFormState({
       name: service.name,
       cwd: service.cwd,
@@ -923,6 +928,7 @@ export default function App() {
                 onClick={() => {
                   setFormMode("add");
                   setEditingService(null);
+                  setServiceFormError(null);
                   resetForm();
                   setShowForm(true);
                 }}
@@ -1399,6 +1405,15 @@ export default function App() {
                       </button>
                     </Dialog.Close>
                   </div>
+
+                  {serviceFormError ? (
+                    <div
+                      role="alert"
+                      className="mt-4 rounded-2xl border border-rose-400/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200"
+                    >
+                      {serviceFormError}
+                    </div>
+                  ) : null}
 
                   <div className="mt-6 min-h-0 flex-1 grid gap-4 overflow-y-auto pr-1">
                     {[

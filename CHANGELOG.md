@@ -12,6 +12,7 @@
 
 ### Fixed
 - `devservers bootstrap` now aligns daemon runtime with UI mode (`daemon` uses packaged daemon with `/ui/`, source-mode defaults to Vite hot reload via `--ui vite`) and auto-recovers local stale daemon sessions that respond on `/services` but are not serving `/ui/`.
+- Service add/edit modal failures now render inline inside the modal (including create/delete errors) instead of only in the page-level alert hidden behind the dialog overlay, and daemon JSON error payloads (including validation objects) are now formatted into readable messages instead of raw JSON.
 
 ## 0.3.0 - 2026-02-11
 
