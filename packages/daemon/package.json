@@ -1,6 +1,6 @@
 {
   "name": "@24letters/devservers-daemon",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "type": "module",
   "description": "Fastify daemon for Devservers Manager.",
   "license": "MIT",

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.4.0 - 2026-02-19
+
 ### Added
 - Compose services can now write resolved env vars into a managed block inside a `.env` file via `managedEnvFile`/`managed_env_file`/`managed-env-file`, with block delimiters `# - Managed by \`devservers\` - Start, do not edit.` and `# - Managed by \`devservers\` - End`; when appending after existing content, devservers inserts two newline characters before the start marker and no blank lines inside the managed marker block.
 - CLI now includes `devservers url <service>` to print a full local URL for a running service, with optional `--scheme`, `--host`, and `--path` overrides; it also exposes an explicit top-level `--help` overview flag for agents to list available commands quickly.
