@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Changed
+- Desktop UI now uses a right-sidebar navigation model with fuzzy search at the top; started services remain pinned in a dedicated area, sidebar ordering now prioritizes most recently started services/working copies (using `lastStartedAt`) with stable name fallback ordering, services are organized by working copy, working-copy headers only render when multiple services exist in that group and use slightly larger type, service rows are compact 36px name-only entries with no vertical gaps between adjacent service rows, horizontal overflow is suppressed in the sidebar, extra vertical separation is added between the Started block and non-started service list, list-level card wrappers around sidebar services were removed for a flatter layout, clicking a service focuses that single service in the main pane without transition animation, clicking a working copy shows all services for that working copy, and service logs render inline by default only when the selected service is running.
+
 ## 0.4.0 - 2026-02-19
 
 ### Added

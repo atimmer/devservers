@@ -1,5 +1,4 @@
 import * as Dialog from "@radix-ui/react-dialog";
-import { AnimatePresence, motion } from "motion/react";
 import React from "react";
 import { Terminal } from "xterm";
 import { FitAddon } from "xterm-addon-fit";
@@ -99,6 +98,87 @@ const portModeLabels: Record<PortMode, string> = {
   registry: "Port registry"
 };
 
+type MainSelection =
+  | {
+      type: "service";
+      serviceName: string;
+    }
+  | {
+      type: "working-copy";
+      groupKey: string;
+    };
+
+const getPathName = (value?: string) => {
+  if (!value) {
+    return "Standalone";
+  }
+  const normalized = value.replace(/\\/g, "/").replace(/\/+$/, "");
+  if (!normalized) {
+    return "Standalone";
+  }
+  const parts = normalized.split("/").filter(Boolean);
+  return parts.length > 0 ? parts[parts.length - 1] : normalized;
+};
+
+const getWorkingDirectory = (service: ServiceInfo) => service.repo?.root ?? service.cwd;
+const getLastStartedTimestamp = (service: ServiceInfo) => {
+  const parsed = service.lastStartedAt ? Date.parse(service.lastStartedAt) : Number.NaN;
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+const compareByMostRecentlyStarted = (a: ServiceInfo, b: ServiceInfo) => {
+  const timeDiff = getLastStartedTimestamp(b) - getLastStartedTimestamp(a);
+  if (timeDiff !== 0) {
+    return timeDiff;
+  }
+  return a.name.localeCompare(b.name, undefined, { sensitivity: "base", numeric: true });
+};
+
+const tokenizeQuery = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+
+const fuzzyMatchTerm = (needle: string, haystack: string) => {
+  if (!needle) {
+    return true;
+  }
+  if (haystack.includes(needle)) {
+    return true;
+  }
+  let position = -1;
+  let first = -1;
+  for (const char of needle) {
+    const next = haystack.indexOf(char, position + 1);
+    if (next === -1) {
+      return false;
+    }
+    if (first === -1) {
+      first = next;
+    }
+    if (position !== -1 && next - position > 4) {
+      return false;
+    }
+    position = next;
+  }
+  const span = position - first + 1;
+  const maxSpan = Math.max(needle.length + 4, needle.length * 2);
+  return span <= maxSpan;
+};
+
+const fuzzyMatch = (query: string, ...values: Array<string | undefined>) => {
+  const tokens = tokenizeQuery(query);
+  if (tokens.length === 0) {
+    return true;
+  }
+  const haystack = values.filter(Boolean).join(" ").toLowerCase();
+  if (!haystack) {
+    return false;
+  }
+  return tokens.every((token) => fuzzyMatchTerm(token, haystack));
+};
+
 const parseEnv = (value: string) => {
   const entries = value
     .split("\n")
@@ -128,11 +208,6 @@ const formatConfigDefinition = (config: ServiceConfigDefinition | null) => {
 const LOG_ERROR_PATTERN =
   /\b(error|failed|fatal|exception|panic|traceback|unhandled|eaddrinuse|segmentation fault)\b/i;
 
-const servicePresenceTransition = {
-  duration: 0.28,
-  ease: [0.2, 0, 0.2, 1] as const
-};
-
 // eslint-disable-next-line no-control-regex
 const ANSI_ESCAPE_PATTERN = new RegExp("\\u001b\\[[0-9;]*m", "g");
 const stripAnsi = (value: string) => value.replace(ANSI_ESCAPE_PATTERN, "");
@@ -145,110 +220,6 @@ const ServiceStatusPill = ({ status }: { status: ServiceStatus }) => (
   >
     {status}
   </span>
-);
-
-const EditIcon = ({ className }: { className?: string }) => (
-  <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
-    <path
-      d="M12 20h9"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-    <path
-      d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  </svg>
-);
-
-const LogsIcon = ({ className }: { className?: string }) => (
-  <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
-    <path
-      d="M8 9h8"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-    <path
-      d="M8 12h8"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-    <path
-      d="M8 15h5"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-    <rect
-      x="3"
-      y="4"
-      width="18"
-      height="16"
-      rx="2.5"
-      stroke="currentColor"
-      strokeWidth="1.8"
-    />
-  </svg>
-);
-
-const ConfigIcon = ({ className }: { className?: string }) => (
-  <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
-    <path
-      d="M4 6h8"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-    <path
-      d="M14 6h6"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-    <circle cx="12" cy="6" r="2" stroke="currentColor" strokeWidth="1.8" />
-    <path
-      d="M4 12h4"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-    <path
-      d="M12 12h8"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-    <circle cx="10" cy="12" r="2" stroke="currentColor" strokeWidth="1.8" />
-    <path
-      d="M4 18h10"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-    <path
-      d="M18 18h2"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-    <circle cx="16" cy="18" r="2" stroke="currentColor" strokeWidth="1.8" />
-  </svg>
 );
 
 const OpenIcon = ({ className }: { className?: string }) => (
@@ -382,7 +353,8 @@ export default function App() {
   const [projects, setProjects] = useState<RegisteredProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeLogService, setActiveLogService] = useState<ServiceInfo | null>(null);
+  const [selection, setSelection] = useState<MainSelection | null>(null);
+  const [sidebarQuery, setSidebarQuery] = useState("");
   const [activeConfigService, setActiveConfigService] = useState<ServiceInfo | null>(null);
   const [activeConfigDefinition, setActiveConfigDefinition] = useState<ServiceConfigDefinition | null>(
     null
@@ -399,7 +371,6 @@ export default function App() {
   const [pendingStops, setPendingStops] = useState<string[]>([]);
   const [pendingRestarts, setPendingRestarts] = useState<string[]>([]);
   const [logErrors, setLogErrors] = useState<string[]>([]);
-  const [logHighlights, setLogHighlights] = useState<string[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [showProjectForm, setShowProjectForm] = useState(false);
   const [formMode, setFormMode] = useState<"add" | "edit">("add");
@@ -447,18 +418,9 @@ export default function App() {
     lastLogPayloadRef.current = nextLogs;
   }, []);
 
-  const markLogError = useCallback(
-    (serviceName: string) => {
-      setLogErrors((prev) => (prev.includes(serviceName) ? prev : [...prev, serviceName]));
-      setLogHighlights((prev) => {
-        if (activeLogService?.name === serviceName) {
-          return prev;
-        }
-        return prev.includes(serviceName) ? prev : [...prev, serviceName];
-      });
-    },
-    [activeLogService]
-  );
+  const markLogError = useCallback((serviceName: string) => {
+    setLogErrors((prev) => (prev.includes(serviceName) ? prev : [...prev, serviceName]));
+  }, []);
 
   const refresh = useCallback(async () => {
     try {
@@ -498,7 +460,6 @@ export default function App() {
           })
         );
         setLogErrors((prev) => prev.filter((name) => serviceNames.has(name)));
-        setLogHighlights((prev) => prev.filter((name) => serviceNames.has(name)));
         setLoading(false);
       });
     } catch (err) {
@@ -509,6 +470,18 @@ export default function App() {
     }
   }, []);
 
+  const serviceByName = useMemo(
+    () => new Map(services.map((service) => [service.name, service])),
+    [services]
+  );
+  const selectedService = useMemo(() => {
+    if (selection?.type !== "service") {
+      return null;
+    }
+    return serviceByName.get(selection.serviceName) ?? null;
+  }, [selection, serviceByName]);
+  const selectedServiceIsRunning = selectedService?.status === "running";
+
   useEffect(() => {
     refresh();
     const interval = setInterval(refresh, 4000);
@@ -516,7 +489,7 @@ export default function App() {
   }, [refresh]);
 
   useEffect(() => {
-    if (!activeLogService || !terminalContainer) {
+    if (!selectedService || !selectedServiceIsRunning || !terminalContainer) {
       return;
     }
 
@@ -556,10 +529,10 @@ export default function App() {
       term.dispose();
       terminalRef.current = null;
     };
-  }, [activeLogService, terminalContainer, writeLogsToTerminal]);
+  }, [selectedService, selectedServiceIsRunning, terminalContainer, writeLogsToTerminal]);
 
   useEffect(() => {
-    if (!activeLogService) {
+    if (!selectedService || !selectedServiceIsRunning) {
       setLogs("");
       setCopied(false);
       shouldScrollRef.current = false;
@@ -570,7 +543,7 @@ export default function App() {
     setLogs("");
     lastLogPayloadRef.current = "";
     shouldScrollRef.current = true;
-    const socket = createLogsSocket(activeLogService.name, 200, true);
+    const socket = createLogsSocket(selectedService.name, 200, true);
     socket.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data) as { type: string; payload: string };
@@ -581,7 +554,7 @@ export default function App() {
             ? nextLogs.slice(previousLogs.length)
             : nextLogs;
           if (delta && hasLogError(delta)) {
-            markLogError(activeLogService.name);
+            markLogError(selectedService.name);
           }
           setLogs(nextLogs);
           writeLogsToTerminal(nextLogs);
@@ -598,14 +571,13 @@ export default function App() {
       writeLogsToTerminal(message, true);
     };
     return () => socket.close();
-  }, [activeLogService, markLogError, writeLogsToTerminal]);
+  }, [selectedService, selectedServiceIsRunning, markLogError, writeLogsToTerminal]);
 
   const handleAction = useCallback(
     async (action: "start" | "stop" | "restart", name: string) => {
       setError(null);
       if (action === "start" || action === "restart") {
         setLogErrors((prev) => prev.filter((serviceName) => serviceName !== name));
-        setLogHighlights((prev) => prev.filter((serviceName) => serviceName !== name));
       }
       if (action === "start") {
         setPendingStarts((prev) => (prev.includes(name) ? prev : [...prev, name]));
@@ -658,7 +630,6 @@ export default function App() {
     }
     return counts;
   }, [services, displayStatus]);
-  const logHighlightSet = useMemo(() => new Set(logHighlights), [logHighlights]);
   const displayLogs = useMemo(() => logs.replace(/\s+$/, ""), [logs]);
   const sortedServices = useMemo(
     () =>
@@ -671,30 +642,27 @@ export default function App() {
     return [...sortedServices.map((service) => service.name)];
   }, [sortedServices]);
   const startedServices = useMemo(
-    () => sortedServices.filter((service) => service.status === "running"),
-    [sortedServices]
+    () => services.filter((service) => service.status === "running").sort(compareByMostRecentlyStarted),
+    [services]
   );
-  const groupedServices = useMemo(() => {
+  const workingCopyGroups = useMemo(() => {
     const groups: Array<{
       key: string;
       title: string;
-      root?: string;
+      root: string;
       services: ServiceInfo[];
     }> = [];
     const groupMap = new Map<string, (typeof groups)[number]>();
 
-    for (const service of sortedServices) {
-      if (service.status === "running") {
-        continue;
-      }
-      const repo = service.repo;
-      const key = repo?.root ?? "__ungrouped__";
+    for (const service of services) {
+      const root = getWorkingDirectory(service);
+      const key = root;
       let group = groupMap.get(key);
       if (!group) {
         group = {
           key,
-          title: repo?.name ?? "Standalone",
-          root: repo?.root,
+          title: getPathName(root),
+          root,
           services: []
         };
         groupMap.set(key, group);
@@ -703,7 +671,17 @@ export default function App() {
       group.services.push(service);
     }
 
+    for (const group of groups) {
+      group.services.sort(compareByMostRecentlyStarted);
+    }
+
     groups.sort((a, b) => {
+      const aLatest = Math.max(...a.services.map(getLastStartedTimestamp), 0);
+      const bLatest = Math.max(...b.services.map(getLastStartedTimestamp), 0);
+      const latestDiff = bLatest - aLatest;
+      if (latestDiff !== 0) {
+        return latestDiff;
+      }
       const titleCompare = a.title.localeCompare(b.title, undefined, {
         sensitivity: "base",
         numeric: true
@@ -711,14 +689,93 @@ export default function App() {
       if (titleCompare !== 0) {
         return titleCompare;
       }
-      return (a.root ?? "").localeCompare(b.root ?? "", undefined, {
+      return a.root.localeCompare(b.root, undefined, {
         sensitivity: "base",
         numeric: true
       });
     });
 
     return groups;
-  }, [sortedServices]);
+  }, [services]);
+  const workingCopyMap = useMemo(
+    () => new Map(workingCopyGroups.map((group) => [group.key, group])),
+    [workingCopyGroups]
+  );
+  const filteredStartedServices = useMemo(() => {
+    return startedServices.filter((service) => fuzzyMatch(sidebarQuery, service.name));
+  }, [startedServices, sidebarQuery]);
+  const filteredWorkingCopyGroups = useMemo(() => {
+    return workingCopyGroups
+      .map((group) => {
+        const nonRunningServices = group.services.filter((service) => service.status !== "running");
+        const groupMatched = fuzzyMatch(sidebarQuery, group.title);
+        if (groupMatched) {
+          return {
+            ...group,
+            services: nonRunningServices
+          };
+        }
+        const filteredServices = nonRunningServices.filter((service) =>
+          fuzzyMatch(sidebarQuery, service.name)
+        );
+        return {
+          ...group,
+          services: filteredServices
+        };
+      })
+      .filter((group) => group.services.length > 0);
+  }, [workingCopyGroups, sidebarQuery]);
+  const selectedWorkingCopy = useMemo(() => {
+    if (selection?.type !== "working-copy") {
+      return null;
+    }
+    return workingCopyMap.get(selection.groupKey) ?? null;
+  }, [selection, workingCopyMap]);
+  const visibleServices = useMemo(() => {
+    if (selection?.type === "service") {
+      return selectedService ? [selectedService] : [];
+    }
+    if (selection?.type === "working-copy") {
+      return selectedWorkingCopy?.services ?? [];
+    }
+    return [];
+  }, [selection, selectedService, selectedWorkingCopy]);
+  const selectionLabel = useMemo(() => {
+    if (selection?.type === "service" && selectedService) {
+      return selectedService.name;
+    }
+    if (selection?.type === "working-copy" && selectedWorkingCopy) {
+      return selectedWorkingCopy.title;
+    }
+    return "No selection";
+  }, [selection, selectedService, selectedWorkingCopy]);
+  const selectionDescription = useMemo(() => {
+    if (selection?.type === "service" && selectedService) {
+      return getWorkingDirectory(selectedService);
+    }
+    if (selection?.type === "working-copy" && selectedWorkingCopy) {
+      return `${selectedWorkingCopy.services.length} services`;
+    }
+    return "";
+  }, [selection, selectedService, selectedWorkingCopy]);
+  useEffect(() => {
+    if (sortedServices.length === 0) {
+      setSelection(null);
+      return;
+    }
+    setSelection((previous) => {
+      if (previous?.type === "service" && serviceByName.has(previous.serviceName)) {
+        return previous;
+      }
+      if (previous?.type === "working-copy" && workingCopyMap.has(previous.groupKey)) {
+        return previous;
+      }
+      if (startedServices.length > 0) {
+        return { type: "service", serviceName: startedServices[0].name };
+      }
+      return { type: "working-copy", groupKey: workingCopyGroups[0].key };
+    });
+  }, [sortedServices, startedServices, workingCopyGroups, serviceByName, workingCopyMap]);
   const projectByName = useMemo(
     () => new Map(projects.map((project) => [project.name, project])),
     [projects]
@@ -866,8 +923,7 @@ export default function App() {
   }, []);
 
   const openServiceLogs = useCallback((service: ServiceInfo) => {
-    setActiveLogService(service);
-    setLogHighlights((prev) => prev.filter((highlighted) => highlighted !== service.name));
+    setSelection({ type: "service", serviceName: service.name });
   }, []);
 
   const getProjectForService = useCallback(
@@ -893,217 +949,209 @@ export default function App() {
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(900px_circle_at_20%_-10%,#233247,transparent_60%),radial-gradient(700px_circle_at_80%_10%,#2a1d2e,transparent_55%)]" />
         <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-slate-950/70 to-transparent" />
 
-        <div className="relative mx-auto flex min-h-screen max-w-6xl flex-col gap-10 px-6 pb-10 pt-0">
-          <header className="flex flex-wrap items-center justify-between gap-3 rounded-b-2xl rounded-t-none border border-white/10 bg-white/5 px-4 py-2.5">
-            <div className="flex flex-wrap items-center gap-3">
-              {([
-                ["running", statusSummary.running],
-                ["stopped", statusSummary.stopped],
-                ["error", statusSummary.error]
-              ] as const).map(([label, value]) => (
-                <div
-                  key={label}
-                  className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2"
-                >
-                  <span className="text-xs uppercase tracking-widest text-slate-400">{label}</span>
-                  <span className="text-sm font-semibold text-white">{value}</span>
-                </div>
-              ))}
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-[11px] uppercase tracking-[0.2em] text-slate-300">
-                {projects.length} projects
+        <div className="relative mx-auto flex min-h-screen w-full max-w-[1500px] flex-col gap-6 px-4 py-4 lg:flex-row lg:px-6 lg:py-6">
+          <aside className="w-full lg:order-2 lg:sticky lg:top-6 lg:h-[calc(100vh-3rem)] lg:w-80 lg:shrink-0">
+            <div className="flex h-full max-h-[70vh] flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#0c1118]/85 backdrop-blur lg:max-h-none">
+              <div className="border-b border-white/10 px-4 py-3">
+                <p className="text-[11px] uppercase tracking-[0.24em] text-slate-400">Services</p>
+                <p className="mt-1 text-xs text-slate-500">{services.length} total</p>
+                <label className="mt-3 block">
+                  <span className="sr-only">Search services and working copies</span>
+                  <input
+                    type="search"
+                    value={sidebarQuery}
+                    onChange={(event) => {
+                      setSidebarQuery(event.target.value);
+                    }}
+                    placeholder="Search services or working copies"
+                    className="h-9 w-full rounded-xl border border-white/15 bg-white/5 px-3 text-xs text-white outline-none transition placeholder:text-slate-500 focus:border-cyan-300/60"
+                  />
+                </label>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowProjectForm(true);
-                }}
-                className="rounded-full border border-white/20 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-white transition hover:border-white/60"
-              >
-                Add Project
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setFormMode("add");
-                  setEditingService(null);
-                  setServiceFormError(null);
-                  resetForm();
-                  setShowForm(true);
-                }}
-                className="rounded-full bg-emerald-400 px-5 py-2 text-xs font-semibold uppercase tracking-wider text-slate-950 shadow-lg shadow-emerald-500/30 transition hover:bg-emerald-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200/80 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
-              >
-                Add Service
-              </button>
-            </div>
-          </header>
-
-          {error ? (
-            <div className="rounded-2xl border border-rose-400/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
-              {error}
-            </div>
-          ) : null}
-
-          <section className="grid gap-6">
-            {loading ? (
-              <div className="rounded-2xl border border-white/10 bg-white/5 px-6 py-10 text-sm text-slate-300">
-                Loading services…
-              </div>
-            ) : services.length === 0 ? (
-              <div className="rounded-2xl border border-white/10 bg-white/5 px-6 py-10 text-sm text-slate-300">
-                No services yet. Add one to get started.
-              </div>
-            ) : (
-              <>
-                <section className="grid gap-3 rounded-2xl border border-emerald-300/20 bg-emerald-500/5 p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-xs uppercase tracking-widest text-emerald-200">
-                      Started services
+              <div className="min-h-0 flex-1 space-y-0 overflow-x-hidden overflow-y-auto p-3">
+                <section className="space-y-2">
+                  <div className="flex items-center justify-between gap-2 px-1">
+                    <p className="text-[10px] uppercase tracking-[0.26em] text-emerald-200">
+                      Started
                     </p>
-                    <p className="text-xs text-emerald-100/80">{startedServices.length} active</p>
+                    <p className="text-[11px] text-emerald-100/80">{filteredStartedServices.length}</p>
                   </div>
-                  {startedServices.length === 0 ? (
-                    <p className="text-sm text-slate-300">No active services.</p>
+                  {filteredStartedServices.length === 0 ? (
+                    <p className="px-2 text-xs text-slate-400">No started services found.</p>
                   ) : (
-                    <div className="grid gap-2">
-                      <AnimatePresence initial={false} mode="popLayout">
-                        {startedServices.map((service) => (
-                          <motion.div
+                    <div className="grid gap-0">
+                      {filteredStartedServices.map((service) => {
+                        const selected =
+                          selection?.type === "service" && selection.serviceName === service.name;
+                        return (
+                          <button
                             key={service.name}
-                            layout
-                            initial={{ height: 0, y: 8 }}
-                            animate={{ height: "auto", y: 0 }}
-                            exit={{ height: 0, y: -8 }}
-                            transition={servicePresenceTransition}
-                            className="overflow-hidden"
+                            type="button"
+                            onClick={() => {
+                              setSelection({ type: "service", serviceName: service.name });
+                            }}
+                            className={`h-9 min-w-0 w-full rounded-xl border px-3 text-left text-xs transition ${
+                              selected
+                                ? "border-emerald-300/60 bg-emerald-400/20 text-emerald-100"
+                                : "border-white/10 bg-white/5 text-slate-200 hover:border-emerald-300/30 hover:bg-emerald-500/10"
+                            }`}
+                            title={service.name}
                           >
-                            <div className="grid gap-2 rounded-2xl border border-white/10 bg-white/5 p-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,132px)_minmax(0,132px)_44px_44px_minmax(0,132px)] lg:items-center">
-                              <div className="min-w-0 pr-2">
-                                <h2 className="truncate text-base font-semibold text-white">
-                                  {service.name}
-                                </h2>
-                              </div>
-                              <ActionButton
-                                label="Stop"
-                                variant="stop"
-                                onClick={() => handleAction("stop", service.name)}
-                                isLoading={pendingStops.includes(service.name)}
-                                disabled={pendingStops.includes(service.name)}
-                                spinnerClassName="opacity-100 transition-opacity delay-100 start:opacity-0"
-                              />
-                              <ActionButton
-                                label="Restart"
-                                variant="restart"
-                                onClick={() => handleAction("restart", service.name)}
-                                isLoading={pendingRestarts.includes(service.name)}
-                                disabled={pendingRestarts.includes(service.name)}
-                              />
-                              {service.source === "compose" ? (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    void openConfigDefinition(service);
-                                  }}
-                                  aria-label={`Config for ${service.name}`}
-                                  title={`Config for ${service.name}`}
-                                  className="flex h-8 w-8 justify-self-center items-center justify-center rounded-full border border-white/20 text-white transition hover:border-white/60"
-                                >
-                                  <ConfigIcon className="h-5 w-5" />
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    openServiceEditor(service);
-                                  }}
-                                  aria-label={`Edit ${service.name}`}
-                                  title={`Edit ${service.name}`}
-                                  className="flex h-8 w-8 justify-self-center items-center justify-center rounded-full border border-white/20 text-white transition hover:border-white/60"
-                                >
-                                  <EditIcon className="h-5 w-5" />
-                                </button>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  openServiceLogs(service);
-                                }}
-                                aria-label={`Open logs for ${service.name}`}
-                                title={`Open logs for ${service.name}`}
-                                className={`flex h-8 w-8 justify-self-center items-center justify-center rounded-full border transition ${
-                                  logHighlightSet.has(service.name)
-                                    ? "border-amber-400/70 bg-amber-400/15 text-amber-100 ring-1 ring-amber-300/40 hover:border-amber-300/80"
-                                    : "border-white/20 text-white hover:border-white/60"
-                                }`}
-                              >
-                                <LogsIcon className="h-5 w-5" />
-                              </button>
-                              {service.port ? (
-                                <a
-                                  href={buildServiceUrl(service) ?? undefined}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="flex h-9 w-full items-center justify-center rounded-full border border-white/20 px-3 text-[11px] font-semibold uppercase leading-none tracking-[0.18em] text-white transition hover:border-white/60"
-                                >
-                                  <span className="inline-flex items-center gap-2">
-                                    Open
-                                    <OpenIcon className="h-5 w-5" />
-                                  </span>
-                                </a>
-                              ) : (
-                                <button
-                                  type="button"
-                                  className="h-9 w-full rounded-full border border-white/20 px-3 py-0 text-[11px] font-semibold uppercase leading-none tracking-[0.18em] text-slate-400"
-                                  disabled
-                                >
-                                  <span className="inline-flex items-center gap-2">
-                                    Open
-                                    <OpenIcon className="h-5 w-5" />
-                                  </span>
-                                </button>
-                              )}
-                            </div>
-                          </motion.div>
-                        ))}
-                      </AnimatePresence>
+                            <span className="block truncate leading-6">{service.name}</span>
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
                 </section>
 
-                {groupedServices.length === 0 ? (
+                <section className="mt-3 border-t border-white/10 pt-3 space-y-0 overflow-x-hidden">
+                  {filteredWorkingCopyGroups.length === 0 ? (
+                    <p className="rounded-2xl border border-white/10 bg-white/5 px-3 py-4 text-xs text-slate-400">
+                      No matching services or working copies.
+                    </p>
+                  ) : (
+                    filteredWorkingCopyGroups.map((group) => {
+                      const groupSelected =
+                        selection?.type === "working-copy" && selection.groupKey === group.key;
+                      const showHeader = group.services.length > 1;
+                      return (
+                        <div key={group.key} className="space-y-0">
+                          {showHeader ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelection({ type: "working-copy", groupKey: group.key });
+                              }}
+                              className={`h-9 min-w-0 w-full rounded-xl px-2 text-left text-sm font-semibold transition ${
+                                groupSelected
+                                  ? "bg-white/15 text-white"
+                                  : "text-slate-300 hover:bg-white/10 hover:text-white"
+                              }`}
+                              title={group.root}
+                            >
+                              <span className="block truncate leading-6">{group.title}</span>
+                            </button>
+                          ) : null}
+                          <div className="grid gap-0 overflow-x-hidden">
+                            {group.services.map((service) => {
+                              const selected =
+                                selection?.type === "service" && selection.serviceName === service.name;
+                              return (
+                                <button
+                                  key={service.name}
+                                  type="button"
+                                  onClick={() => {
+                                    setSelection({ type: "service", serviceName: service.name });
+                                  }}
+                                  className={`h-9 min-w-0 w-full rounded-lg border px-2.5 text-left text-xs transition ${
+                                    selected
+                                      ? "border-cyan-300/60 bg-cyan-400/15 text-cyan-100"
+                                      : "border-transparent text-slate-300 hover:border-white/10 hover:bg-white/5"
+                                  }`}
+                                  title={service.name}
+                                >
+                                  <span className="block truncate leading-6">{service.name}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </section>
+              </div>
+            </div>
+          </aside>
+
+          <main className="min-w-0 flex-1 pb-10 lg:order-1">
+            <div className="grid gap-4">
+              <header className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  {([
+                    ["running", statusSummary.running],
+                    ["stopped", statusSummary.stopped],
+                    ["error", statusSummary.error]
+                  ] as const).map(([label, value]) => (
+                    <div
+                      key={label}
+                      className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2"
+                    >
+                      <span className="text-xs uppercase tracking-widest text-slate-400">{label}</span>
+                      <span className="text-sm font-semibold text-white">{value}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-[11px] uppercase tracking-[0.2em] text-slate-300">
+                    {projects.length} projects
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowProjectForm(true);
+                    }}
+                    className="rounded-full border border-white/20 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-white transition hover:border-white/60"
+                  >
+                    Add Project
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormMode("add");
+                      setEditingService(null);
+                      setServiceFormError(null);
+                      resetForm();
+                      setShowForm(true);
+                    }}
+                    className="rounded-full bg-emerald-400 px-5 py-2 text-xs font-semibold uppercase tracking-wider text-slate-950 shadow-lg shadow-emerald-500/30 transition hover:bg-emerald-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200/80 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+                  >
+                    Add Service
+                  </button>
+                </div>
+              </header>
+
+              {error ? (
+                <div className="rounded-2xl border border-rose-400/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+                  {error}
+                </div>
+              ) : null}
+
+              <section className="grid gap-4">
+                {loading ? (
                   <div className="rounded-2xl border border-white/10 bg-white/5 px-6 py-10 text-sm text-slate-300">
-                    No stopped services. Active services are listed above.
+                    Loading services…
+                  </div>
+                ) : services.length === 0 ? (
+                  <div className="rounded-2xl border border-white/10 bg-white/5 px-6 py-10 text-sm text-slate-300">
+                    No services yet. Add one to get started.
                   </div>
                 ) : (
-                  groupedServices.map((group) => (
-                    <div key={group.key} className="grid gap-4">
-                      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
-                        <div className="flex flex-col gap-1">
-                          <p className="text-xs uppercase tracking-widest text-slate-400">
-                            {group.title}
-                          </p>
-                          <p className="text-xs text-slate-500">
-                            {group.root ?? "No repo root detected"}
-                          </p>
-                        </div>
-                        <p className="text-xs text-slate-400">{group.services.length} services</p>
-                      </div>
+                  <>
+                    <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                      <p className="text-[10px] uppercase tracking-[0.24em] text-slate-500">
+                        Main View
+                      </p>
+                      <p className="mt-1 text-lg font-semibold text-white">{selectionLabel}</p>
+                      {selectionDescription ? (
+                        <p className="mt-1 text-xs text-slate-400">{selectionDescription}</p>
+                      ) : null}
+                    </div>
 
-                      <AnimatePresence initial={false} mode="popLayout">
-                        {group.services.map((service) => {
+                    {visibleServices.length === 0 ? (
+                      <div className="rounded-2xl border border-white/10 bg-white/5 px-6 py-10 text-sm text-slate-300">
+                        Select a service or working copy from the sidebar.
+                      </div>
+                    ) : (
+                      <>
+                        {visibleServices.map((service) => {
                           const status = displayStatus(service);
                           const linkedProject = getProjectForService(service);
+                          const logsOpen =
+                            selection?.type === "service" && selection.serviceName === service.name;
                           return (
-                            <motion.div
-                              key={service.name}
-                              layout
-                              initial={{ height: 0, y: 8 }}
-                              animate={{ height: "auto", y: 0 }}
-                              exit={{ height: 0, y: -8 }}
-                              transition={servicePresenceTransition}
-                              className="overflow-hidden"
-                            >
+                            <div key={service.name} className="overflow-hidden">
                               <div className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-[0_0_40px_rgba(0,0,0,0.2)]">
                                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                                   <div className="flex flex-col gap-3">
@@ -1221,104 +1269,91 @@ export default function App() {
                                         onClick={() => {
                                           openServiceLogs(service);
                                         }}
+                                        disabled={logsOpen}
                                         className={`h-9 w-full rounded-full border px-3 py-0 text-[11px] font-semibold uppercase leading-none tracking-[0.18em] transition ${
-                                          logHighlightSet.has(service.name)
-                                            ? "border-amber-400/70 bg-amber-400/15 text-amber-100 ring-1 ring-amber-300/40 hover:border-amber-300/80"
+                                          logsOpen
+                                            ? "border-cyan-300/60 bg-cyan-400/15 text-cyan-100"
                                             : "border-white/20 text-white hover:border-white/60"
-                                        }`}
+                                        } disabled:cursor-not-allowed disabled:opacity-80`}
                                       >
-                                        Logs
+                                        {logsOpen ? "Logs Open" : "Logs"}
                                       </button>
-                                      <button
-                                        type="button"
-                                        className="invisible h-9 w-full rounded-full border border-white/20 px-3 py-0 text-[11px] font-semibold uppercase leading-none tracking-[0.18em] text-white"
-                                        aria-hidden="true"
-                                        tabIndex={-1}
-                                        disabled
-                                      >
-                                        Open
-                                      </button>
+                                      {service.port ? (
+                                        <a
+                                          href={buildServiceUrl(service) ?? undefined}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="flex h-9 w-full items-center justify-center rounded-full border border-white/20 px-3 text-[11px] font-semibold uppercase leading-none tracking-[0.18em] text-white transition hover:border-white/60"
+                                        >
+                                          <span className="inline-flex items-center gap-2">
+                                            Open
+                                            <OpenIcon className="h-5 w-5" />
+                                          </span>
+                                        </a>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          className="h-9 w-full rounded-full border border-white/20 px-3 py-0 text-[11px] font-semibold uppercase leading-none tracking-[0.18em] text-slate-400"
+                                          disabled
+                                        >
+                                          Open
+                                        </button>
+                                      )}
                                     </div>
                                   </div>
                                 </div>
                               </div>
-                            </motion.div>
+                            </div>
                           );
                         })}
-                      </AnimatePresence>
-                    </div>
-                  ))
-                )}
-              </>
-            )}
-          </section>
-        </div>
-
-        <Dialog.Root
-          open={Boolean(activeLogService)}
-          onOpenChange={(open) => {
-            if (!open) {
-              setActiveLogService(null);
-            }
-          }}
-        >
-          {activeLogService ? (
-            <Dialog.Portal>
-              <Dialog.Overlay className="fixed inset-0 z-50 bg-black/60" />
-              <Dialog.Content className="fixed inset-0 z-50 flex items-center justify-center px-6 py-10 outline-none">
-                <div className="flex h-[85vh] w-full max-w-5xl flex-col rounded-3xl border border-white/10 bg-[#0c1118] p-6">
-                  <div className="flex items-center justify-between gap-4">
-                    <div>
-                      <Dialog.Description className="text-xs uppercase tracking-[0.3em] text-slate-400">
-                        Logs
-                      </Dialog.Description>
-                      <Dialog.Title className="text-lg font-semibold text-white">
-                        {activeLogService.name}
-                      </Dialog.Title>
-                    </div>
-                    <Dialog.Close asChild>
-                      <button
-                        type="button"
-                        className="rounded-full border border-white/20 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-white transition hover:border-white/60"
-                      >
-                        Close
-                      </button>
-                    </Dialog.Close>
-                  </div>
-                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-xs text-slate-200">
-                    <code className="break-all text-[11px] text-slate-200">
-                      tmux attach -r -t {TMUX_SESSION}:{activeLogService.name}
-                    </code>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        const command = `tmux attach -r -t ${TMUX_SESSION}:${activeLogService.name}`;
-                        try {
-                          await navigator.clipboard.writeText(command);
-                          setCopied(true);
-                          setTimeout(() => setCopied(false), 1500);
-                        } catch {
-                          setCopied(false);
-                        }
-                      }}
-                      className="rounded-full border border-white/20 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-white transition hover:border-white/60"
-                    >
-                      {copied ? "Copied" : "Copy"}
-                    </button>
-                  </div>
-                  <div className="relative mt-4 min-h-0 flex-1 overflow-hidden rounded-2xl border border-white/10 bg-black/40 p-4 text-xs text-slate-200">
-                    <div ref={setTerminalContainer} className="logs-terminal h-full w-full" />
-                    {displayLogs.length > 0 || logs ? null : (
-                      <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-slate-400">
-                        Waiting for logs...
-                      </div>
+                      </>
                     )}
-                  </div>
-                </div>
-              </Dialog.Content>
-            </Dialog.Portal>
-          ) : null}
-        </Dialog.Root>
+
+                    {selectedServiceIsRunning && selectedService ? (
+                      <section className="flex h-[65vh] min-h-[360px] flex-col rounded-3xl border border-white/10 bg-[#0c1118] p-6">
+                        <div className="flex items-center justify-between gap-4">
+                          <div>
+                            <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Logs</p>
+                            <h3 className="text-lg font-semibold text-white">{selectedService.name}</h3>
+                          </div>
+                        </div>
+                        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-xs text-slate-200">
+                          <code className="break-all text-[11px] text-slate-200">
+                            tmux attach -r -t {TMUX_SESSION}:{selectedService.name}
+                          </code>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const command = `tmux attach -r -t ${TMUX_SESSION}:${selectedService.name}`;
+                              try {
+                                await navigator.clipboard.writeText(command);
+                                setCopied(true);
+                                setTimeout(() => setCopied(false), 1500);
+                              } catch {
+                                setCopied(false);
+                              }
+                            }}
+                            className="rounded-full border border-white/20 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-white transition hover:border-white/60"
+                          >
+                            {copied ? "Copied" : "Copy"}
+                          </button>
+                        </div>
+                        <div className="relative mt-4 min-h-0 flex-1 overflow-hidden rounded-2xl border border-white/10 bg-black/40 p-4 text-xs text-slate-200">
+                          <div ref={setTerminalContainer} className="logs-terminal h-full w-full" />
+                          {displayLogs.length > 0 || logs ? null : (
+                            <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-slate-400">
+                              Waiting for logs...
+                            </div>
+                          )}
+                        </div>
+                      </section>
+                    ) : null}
+                  </>
+                )}
+              </section>
+            </div>
+          </main>
+        </div>
 
         <Dialog.Root
           open={Boolean(activeConfigService)}

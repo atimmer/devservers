@@ -6,6 +6,7 @@
 - In production, the daemon serves the UI at `/ui/`.
 - Daemon manages tmux session `devservers` and exposes REST + WS APIs.
 - CLI is a thin wrapper over config + daemon endpoints.
+- Desktop UI uses a right sidebar: fuzzy search at top, started services pinned first, then working-copy groups sorted by working-directory name.
 
 ## Process model
 
@@ -22,7 +23,7 @@
 
 ## Logs
 
-- No logs loaded by default.
+- Logs are streamed by default when a single service is selected in the main view.
 - UI opens a WS stream to `WS /services/:name/logs` and receives tail output.
 - Uses `tmux capture-pane` to avoid separate log pipes.
 - Daemon request/error logs use Fastify logging; interactive terminal runs use pretty console formatting.
