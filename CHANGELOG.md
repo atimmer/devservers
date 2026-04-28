@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 - 2026-04-28
 
 ### Changed
 - Repo instructions now require an immediate fresh build after each change so local `devservers` binaries and any `pnpm link` setup keep pointing at the newest build artifacts for testing.
