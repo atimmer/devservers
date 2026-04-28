@@ -30,7 +30,7 @@ pnpm add -g @24letters/devservers
 Bootstrap the manager to verify everything is working:
 
 ```
-devservers bootstrap
+devservers daemon start
 ```
 
 See CLI command overview:
@@ -42,7 +42,25 @@ devservers --help
 For UI hot reload during development:
 
 ```
-devservers bootstrap --ui vite
+devservers daemon start --ui vite
+```
+
+Check manager status:
+
+```
+devservers daemon status
+```
+
+Restart the manager daemon after a local rebuild:
+
+```
+devservers daemon restart
+```
+
+Stop the manager when you are done:
+
+```
+devservers daemon stop
 ```
 
 Then, install the skill to your AI agent of choice:

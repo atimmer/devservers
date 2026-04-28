@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { DevServerService, RegisteredProject } from "@24letters/devservers-shared";
 import {
+  pruneMissingRegisteredProjects,
   readConfig,
   removeRegisteredProject,
   removeService,
@@ -89,5 +90,35 @@ describe("config", () => {
 
     const removed = removeRegisteredProject(updated, "academy");
     expect(removed.registeredProjects).toHaveLength(0);
+  });
+
+  it("prunes registered projects whose paths no longer point to a directory", async () => {
+    const dir = await createTempDir();
+    const existingProjectPath = path.join(dir, "academy");
+    const fileProjectPath = path.join(dir, "not-a-directory");
+    const missingProjectPath = path.join(dir, "missing");
+
+    await mkdir(existingProjectPath);
+    await writeFile(fileProjectPath, "test\n", "utf-8");
+
+    const config = {
+      version: 1 as const,
+      services: [],
+      registeredProjects: [
+        { ...sampleProject, path: existingProjectPath },
+        { name: "file-project", path: fileProjectPath },
+        { name: "missing-project", path: missingProjectPath }
+      ]
+    };
+
+    const result = await pruneMissingRegisteredProjects(config);
+
+    expect(result.config.registeredProjects).toEqual([
+      { ...sampleProject, path: existingProjectPath }
+    ]);
+    expect(result.removedProjects).toEqual([
+      { name: "file-project", path: fileProjectPath },
+      { name: "missing-project", path: missingProjectPath }
+    ]);
   });
 });

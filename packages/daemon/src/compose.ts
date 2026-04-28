@@ -426,6 +426,12 @@ export class ComposeProjectRegistry {
     }
   }
 
+  async refresh(logger: Logger) {
+    for (const state of this.states.values()) {
+      await this.reloadProject(state, logger);
+    }
+  }
+
   getServices() {
     return [...this.states.values()].flatMap((state) =>
       state.services.map((service) => ({ ...service }))

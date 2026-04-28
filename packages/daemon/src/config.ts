@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -108,6 +108,40 @@ export const readConfig = async (configPath: string): Promise<DevServerConfig> =
     }
     throw error;
   }
+};
+
+export const pruneMissingRegisteredProjects = async (config: DevServerConfig) => {
+  const existingProjectChecks = await Promise.all(
+    config.registeredProjects.map(async (project) => {
+      try {
+        const result = await stat(path.resolve(project.path));
+        return result.isDirectory();
+      } catch (error) {
+        const err = error as NodeJS.ErrnoException;
+        if (err.code === "ENOENT") {
+          return false;
+        }
+        throw error;
+      }
+    })
+  );
+
+  const removedProjects = config.registeredProjects.filter(
+    (_project, index) => !existingProjectChecks[index]
+  );
+  if (removedProjects.length === 0) {
+    return { config, removedProjects };
+  }
+
+  return {
+    config: {
+      ...config,
+      registeredProjects: config.registeredProjects.filter(
+        (_project, index) => existingProjectChecks[index]
+      )
+    },
+    removedProjects
+  };
 };
 
 export const writeConfig = async (configPath: string, config: DevServerConfig) => {

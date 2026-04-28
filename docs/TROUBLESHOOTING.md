@@ -15,7 +15,7 @@
 ## Logs not streaming
 
 - Ensure service window exists in tmux.
-- The UI only requests logs after you click "Logs".
+- Select the service in the UI; its log panel is always shown, and live streaming starts while the service is running.
 
 ## tmux session confusion
 

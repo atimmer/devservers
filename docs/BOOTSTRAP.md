@@ -7,7 +7,7 @@ The manager runs inside the same tmux session used for services.
 Start the daemon in tmux and serve the UI from the daemon:
 
 ```
-devservers bootstrap
+devservers daemon start
 ```
 
 Open the UI at:
@@ -19,13 +19,25 @@ http://127.0.0.1:4141/ui/
 Restart the daemon window:
 
 ```
-devservers bootstrap --restart
+devservers daemon restart
+```
+
+Check daemon and UI status without changing state:
+
+```
+devservers daemon status
 ```
 
 Run the UI through Vite (hot reload):
 
 ```
-devservers bootstrap --ui vite
+devservers daemon start --ui vite
+```
+
+Stop the manager daemon and optional Vite UI window:
+
+```
+devservers daemon stop
 ```
 
 ## From source (dev)
@@ -53,7 +65,13 @@ Restart dev windows:
 Or run the CLI directly in source mode (defaults to Vite UI):
 
 ```
-pnpm -C packages/cli dev bootstrap
+pnpm -C packages/cli dev daemon start
+```
+
+If the daemon is already running and you rebuilt the package locally, reload it with:
+
+```
+pnpm -C packages/cli dev daemon restart
 ```
 
 ## Attach

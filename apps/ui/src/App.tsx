@@ -58,6 +58,7 @@ import {
   type ServiceStatus,
   type PortMode
 } from "./api";
+import { trimTrailingBlankLogLines } from "./logs";
 
 const statusStyles: Record<ServiceStatus, string> = {
   running: "bg-emerald-400/15 text-emerald-200 border-emerald-400/30",
@@ -213,6 +214,8 @@ const ANSI_ESCAPE_PATTERN = new RegExp("\\u001b\\[[0-9;]*m", "g");
 const stripAnsi = (value: string) => value.replace(ANSI_ESCAPE_PATTERN, "");
 
 const hasLogError = (value: string) => LOG_ERROR_PATTERN.test(stripAnsi(value));
+const isViewportAtBottom = (viewport: HTMLElement) =>
+  viewport.scrollTop + viewport.clientHeight >= viewport.scrollHeight - 8;
 
 const ServiceStatusPill = ({ status }: { status: ServiceStatus }) => (
   <span
@@ -240,6 +243,25 @@ const OpenIcon = ({ className }: { className?: string }) => (
     />
     <path
       d="M19 13v5a1 1 0 0 1-1 1h-12a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
+const ArrowDownIcon = ({ className }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
+    <path
+      d="M12 5v14"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <path
+      d="m6 13 6 6 6-6"
       stroke="currentColor"
       strokeWidth="1.8"
       strokeLinecap="round"
@@ -360,13 +382,14 @@ export default function App() {
     null
   );
   const [configLoading, setConfigLoading] = useState(false);
-  const [logs, setLogs] = useState("");
+  const [logsByService, setLogsByService] = useState<Record<string, string>>({});
   const [copied, setCopied] = useState(false);
   const [terminalContainer, setTerminalContainer] = useState<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const lastLogPayloadRef = useRef("");
-  const shouldScrollRef = useRef(false);
+  const autoScrollEnabledRef = useRef(true);
+  const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
   const [pendingStarts, setPendingStarts] = useState<string[]>([]);
   const [pendingStops, setPendingStops] = useState<string[]>([]);
   const [pendingRestarts, setPendingRestarts] = useState<string[]>([]);
@@ -393,33 +416,44 @@ export default function App() {
   });
   const [isSavingProject, setIsSavingProject] = useState(false);
 
+  const updateAutoScrollEnabled = useCallback((nextValue: boolean) => {
+    autoScrollEnabledRef.current = nextValue;
+    setAutoScrollEnabled((currentValue) => (currentValue === nextValue ? currentValue : nextValue));
+  }, []);
+
   const writeLogsToTerminal = useCallback((nextLogs: string, force = false) => {
     const term = terminalRef.current;
+    const renderLogs = trimTrailingBlankLogLines(nextLogs);
     if (!term) {
-      lastLogPayloadRef.current = nextLogs;
+      lastLogPayloadRef.current = renderLogs;
       return;
     }
     const previous = lastLogPayloadRef.current;
-    if (force || !previous || !nextLogs.startsWith(previous)) {
+    if (force || !previous || !renderLogs.startsWith(previous)) {
       term.reset();
-      if (nextLogs) {
-        term.write(nextLogs);
+      if (renderLogs) {
+        term.write(renderLogs);
       }
     } else {
-      const delta = nextLogs.slice(previous.length);
+      const delta = renderLogs.slice(previous.length);
       if (delta) {
         term.write(delta);
       }
     }
-    if (shouldScrollRef.current) {
+    if (autoScrollEnabledRef.current) {
       term.scrollToBottom();
-      shouldScrollRef.current = false;
     }
-    lastLogPayloadRef.current = nextLogs;
+    lastLogPayloadRef.current = renderLogs;
   }, []);
 
   const markLogError = useCallback((serviceName: string) => {
     setLogErrors((prev) => (prev.includes(serviceName) ? prev : [...prev, serviceName]));
+  }, []);
+
+  const storeLogs = useCallback((serviceName: string, nextLogs: string) => {
+    setLogsByService((prev) =>
+      prev[serviceName] === nextLogs ? prev : { ...prev, [serviceName]: nextLogs }
+    );
   }, []);
 
   const refresh = useCallback(async () => {
@@ -459,6 +493,20 @@ export default function App() {
             return service ? service.status !== "stopped" : false;
           })
         );
+        setLogsByService((prev) => {
+          const next = Object.fromEntries(
+            Object.entries(prev).filter(([name]) => serviceNames.has(name))
+          );
+          const prevNames = Object.keys(prev);
+          const nextNames = Object.keys(next);
+          if (
+            prevNames.length === nextNames.length &&
+            prevNames.every((name) => Object.hasOwn(next, name))
+          ) {
+            return prev;
+          }
+          return next;
+        });
         setLogErrors((prev) => prev.filter((name) => serviceNames.has(name)));
         setLoading(false);
       });
@@ -480,7 +528,10 @@ export default function App() {
     }
     return serviceByName.get(selection.serviceName) ?? null;
   }, [selection, serviceByName]);
+  const selectedServiceName = selectedService?.name ?? null;
   const selectedServiceIsRunning = selectedService?.status === "running";
+  const selectedServiceLogs = selectedServiceName ? logsByService[selectedServiceName] ?? "" : "";
+  const selectedServiceShowsLogs = Boolean(selectedService);
 
   useEffect(() => {
     refresh();
@@ -488,8 +539,20 @@ export default function App() {
     return () => clearInterval(interval);
   }, [refresh]);
 
+  const previousSelectedServiceNameRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!selectedService || !selectedServiceIsRunning || !terminalContainer) {
+    if (previousSelectedServiceNameRef.current === selectedServiceName) {
+      return;
+    }
+    previousSelectedServiceNameRef.current = selectedServiceName;
+    setCopied(false);
+    lastLogPayloadRef.current = trimTrailingBlankLogLines(selectedServiceLogs);
+    updateAutoScrollEnabled(true);
+    writeLogsToTerminal(selectedServiceLogs, true);
+  }, [selectedServiceLogs, selectedServiceName, updateAutoScrollEnabled, writeLogsToTerminal]);
+
+  useEffect(() => {
+    if (!selectedServiceName || !selectedServiceShowsLogs || !terminalContainer) {
       return;
     }
 
@@ -510,6 +573,20 @@ export default function App() {
     term.open(terminalContainer);
     fitAddon.fit();
     terminalRef.current = term;
+    const viewport = terminalContainer.querySelector(".xterm-viewport");
+    const handleViewportScroll = () => {
+      if (
+        autoScrollEnabledRef.current &&
+        viewport instanceof HTMLElement &&
+        !isViewportAtBottom(viewport)
+      ) {
+        updateAutoScrollEnabled(false);
+      }
+    };
+
+    if (viewport instanceof HTMLElement) {
+      viewport.addEventListener("scroll", handleViewportScroll, { passive: true });
+    }
 
     if (typeof ResizeObserver !== "undefined") {
       const resizeObserver = new ResizeObserver(() => {
@@ -519,31 +596,38 @@ export default function App() {
       resizeObserverRef.current = resizeObserver;
     }
 
+    updateAutoScrollEnabled(true);
     if (lastLogPayloadRef.current) {
       writeLogsToTerminal(lastLogPayloadRef.current, true);
     }
 
     return () => {
+      if (viewport instanceof HTMLElement) {
+        viewport.removeEventListener("scroll", handleViewportScroll);
+      }
       resizeObserverRef.current?.disconnect();
       resizeObserverRef.current = null;
       term.dispose();
       terminalRef.current = null;
     };
-  }, [selectedService, selectedServiceIsRunning, terminalContainer, writeLogsToTerminal]);
+  }, [
+    selectedServiceName,
+    selectedServiceShowsLogs,
+    terminalContainer,
+    updateAutoScrollEnabled,
+    writeLogsToTerminal
+  ]);
 
   useEffect(() => {
-    if (!selectedService || !selectedServiceIsRunning) {
-      setLogs("");
+    if (!selectedServiceName || !selectedServiceIsRunning) {
       setCopied(false);
-      shouldScrollRef.current = false;
-      lastLogPayloadRef.current = "";
+      updateAutoScrollEnabled(true);
       return;
     }
 
-    setLogs("");
     lastLogPayloadRef.current = "";
-    shouldScrollRef.current = true;
-    const socket = createLogsSocket(selectedService.name, 200, true);
+    updateAutoScrollEnabled(true);
+    const socket = createLogsSocket(selectedServiceName, 200, true);
     socket.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data) as { type: string; payload: string };
@@ -554,24 +638,30 @@ export default function App() {
             ? nextLogs.slice(previousLogs.length)
             : nextLogs;
           if (delta && hasLogError(delta)) {
-            markLogError(selectedService.name);
+            markLogError(selectedServiceName);
           }
-          setLogs(nextLogs);
+          storeLogs(selectedServiceName, nextLogs);
           writeLogsToTerminal(nextLogs);
         }
       } catch {
         const nextLogs = String(event.data ?? "");
-        setLogs(nextLogs);
+        storeLogs(selectedServiceName, nextLogs);
         writeLogsToTerminal(nextLogs, true);
       }
     };
     socket.onerror = () => {
       const message = "Failed to stream logs.";
-      setLogs(message);
       writeLogsToTerminal(message, true);
     };
     return () => socket.close();
-  }, [selectedService, selectedServiceIsRunning, markLogError, writeLogsToTerminal]);
+  }, [
+    selectedServiceName,
+    selectedServiceIsRunning,
+    markLogError,
+    storeLogs,
+    updateAutoScrollEnabled,
+    writeLogsToTerminal
+  ]);
 
   const handleAction = useCallback(
     async (action: "start" | "stop" | "restart", name: string) => {
@@ -630,7 +720,7 @@ export default function App() {
     }
     return counts;
   }, [services, displayStatus]);
-  const displayLogs = useMemo(() => logs.replace(/\s+$/, ""), [logs]);
+  const displayLogs = useMemo(() => selectedServiceLogs.replace(/\s+$/, ""), [selectedServiceLogs]);
   const sortedServices = useMemo(
     () =>
       [...services].sort((a, b) =>
@@ -1309,7 +1399,7 @@ export default function App() {
                       </>
                     )}
 
-                    {selectedServiceIsRunning && selectedService ? (
+                    {selectedServiceShowsLogs && selectedService ? (
                       <section className="flex h-[65vh] min-h-[360px] flex-col rounded-3xl border border-white/10 bg-[#0c1118] p-6">
                         <div className="flex items-center justify-between gap-4">
                           <div>
@@ -1340,11 +1430,30 @@ export default function App() {
                         </div>
                         <div className="relative mt-4 min-h-0 flex-1 overflow-hidden rounded-2xl border border-white/10 bg-black/40 p-4 text-xs text-slate-200">
                           <div ref={setTerminalContainer} className="logs-terminal h-full w-full" />
-                          {displayLogs.length > 0 || logs ? null : (
+                          {displayLogs.length === 0 ? (
                             <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-slate-400">
-                              Waiting for logs...
+                              {selectedServiceIsRunning
+                                ? "Waiting for logs..."
+                                : "No logs captured yet."}
                             </div>
-                          )}
+                          ) : null}
+                          <div className="pointer-events-none absolute bottom-5 right-10 flex justify-end">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                updateAutoScrollEnabled(true);
+                                terminalRef.current?.scrollToBottom();
+                              }}
+                              className={`pointer-events-auto inline-flex items-center gap-2 rounded-full px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.24em] shadow-[0_12px_30px_rgba(2,6,23,0.45)] transition ${
+                                autoScrollEnabled
+                                  ? "border border-white/15 bg-slate-950/75 text-slate-300 hover:border-white/30 hover:bg-slate-900"
+                                  : "border border-sky-400/40 bg-slate-950/90 text-sky-100 hover:border-sky-300/70 hover:bg-slate-900"
+                              }`}
+                            >
+                              <ArrowDownIcon className="h-4 w-4" />
+                              {autoScrollEnabled ? "Following" : "Resume Follow"}
+                            </button>
+                          </div>
                         </div>
                       </section>
                     ) : null}

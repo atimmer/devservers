@@ -10,7 +10,7 @@
 
 ## Process model
 
-- Installable bootstrap starts `manager-daemon` by default (UI served by daemon), or also starts `manager-ui` when `devservers bootstrap --ui vite` is used.
+- Installable daemon start uses `devservers daemon start`, launching `manager-daemon` by default (UI served by daemon), or also starting `manager-ui` when `devservers daemon start --ui vite` is used.
 - Dev bootstrap starts two tmux windows: `manager-daemon` and `manager-ui` (Vite dev server).
 - Each service runs in its own tmux window named after the service.
 - One tmux session groups everything for easy inspection.

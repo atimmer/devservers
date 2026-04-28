@@ -166,6 +166,9 @@ const runningFromSource = path.basename(path.dirname(cliEntryPath)) === "src";
 const skillsRoot = path.join(packageRoot, "skills");
 const packageJsonPath = fileURLToPath(new URL("../package.json", import.meta.url));
 const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf-8")) as { version?: string };
+const MANAGER_SESSION = "devservers";
+const MANAGER_DAEMON_WINDOW = "manager-daemon";
+const MANAGER_UI_WINDOW = "manager-ui";
 
 const AGENT_HOME_ENV: Record<string, string> = {
   codex: "CODEX_HOME",
@@ -233,6 +236,14 @@ const tmuxWindowNames = (session: string) => {
 
 const tmuxWindowExists = (session: string, windowName: string) => {
   return tmuxWindowNames(session).includes(windowName);
+};
+
+const tmuxStopWindow = (session: string, windowName: string) => {
+  if (!tmuxWindowExists(session, windowName)) {
+    return false;
+  }
+  runTmux(["kill-window", "-t", `${session}:${windowName}`]);
+  return true;
 };
 
 const tmuxPaneCommand = (session: string, windowName: string) => {
@@ -322,16 +333,23 @@ const startDaemonWindow = async (
   restart: boolean,
   useSourceDaemon = runningFromSource
 ) => {
-  const session = "devservers";
-  const daemonWindow = "manager-daemon";
   const cwd = process.cwd();
   const daemonCommand = await resolveDaemonCommand(configPath, port, useSourceDaemon);
 
-  if (!tmuxSessionExists(session)) {
-    runTmux(["new-session", "-d", "-s", session, "-n", daemonWindow, "-c", cwd]);
-    runTmux(["send-keys", "-t", `${session}:${daemonWindow}`, daemonCommand, "C-m"]);
+  if (!tmuxSessionExists(MANAGER_SESSION)) {
+    runTmux([
+      "new-session",
+      "-d",
+      "-s",
+      MANAGER_SESSION,
+      "-n",
+      MANAGER_DAEMON_WINDOW,
+      "-c",
+      cwd
+    ]);
+    runTmux(["send-keys", "-t", `${MANAGER_SESSION}:${MANAGER_DAEMON_WINDOW}`, daemonCommand, "C-m"]);
   } else {
-    tmuxStartWindow(session, daemonWindow, daemonCommand, cwd, restart);
+    tmuxStartWindow(MANAGER_SESSION, MANAGER_DAEMON_WINDOW, daemonCommand, cwd, restart);
   }
 };
 
@@ -352,18 +370,16 @@ const startUiWindow = async (daemonBaseUrl: string, restart: boolean) => {
     );
   }
 
-  const session = "devservers";
-  const uiWindow = "manager-ui";
   const cwd = process.cwd();
   const uiCommand = buildDevUiCommand(daemonBaseUrl);
 
-  if (!tmuxSessionExists(session)) {
-    runTmux(["new-session", "-d", "-s", session, "-n", uiWindow, "-c", cwd]);
-    runTmux(["send-keys", "-t", `${session}:${uiWindow}`, uiCommand, "C-m"]);
+  if (!tmuxSessionExists(MANAGER_SESSION)) {
+    runTmux(["new-session", "-d", "-s", MANAGER_SESSION, "-n", MANAGER_UI_WINDOW, "-c", cwd]);
+    runTmux(["send-keys", "-t", `${MANAGER_SESSION}:${MANAGER_UI_WINDOW}`, uiCommand, "C-m"]);
     return;
   }
 
-  tmuxStartWindow(session, uiWindow, uiCommand, cwd, restart);
+  tmuxStartWindow(MANAGER_SESSION, MANAGER_UI_WINDOW, uiCommand, cwd, restart);
 };
 
 const isLoopbackHost = (hostname: string) => {
@@ -416,8 +432,79 @@ const ensureDaemonRunning = async (
   await startDaemonWindow(configPath, port, false, useSourceDaemon);
   const ready = await waitForDaemon(baseUrl);
   if (!ready) {
-    throw new Error("Daemon failed to start. Run `devservers bootstrap` to inspect.");
+    throw new Error("Daemon failed to start. Run `devservers daemon start` to inspect.");
   }
+};
+
+const stopDaemonWindows = () => {
+  const stoppedUi = tmuxStopWindow(MANAGER_SESSION, MANAGER_UI_WINDOW);
+  const stoppedDaemon = tmuxStopWindow(MANAGER_SESSION, MANAGER_DAEMON_WINDOW);
+  return { stoppedDaemon, stoppedUi };
+};
+
+const formatDaemonUiUrl = (baseUrl: string) => {
+  return new URL("/ui/", baseUrl).toString();
+};
+
+type ManagerStartOptions = {
+  config?: string;
+  port?: string;
+  ui?: string;
+  restart?: boolean;
+};
+
+const runDaemonStart = async (
+  options: ManagerStartOptions,
+  restartDaemonWindow: boolean,
+  restartUiWindow: boolean
+) => {
+  const globalOptions = program.opts<{ config?: string }>();
+  const configPath = resolveConfigPath(options.config ?? globalOptions.config);
+  const port = Number(options.port ?? DAEMON_PORT);
+  const requestedUiMode = options.ui ? String(options.ui).toLowerCase() : undefined;
+  const defaultUiMode = runningFromSource ? "vite" : "daemon";
+  const uiMode = requestedUiMode ?? defaultUiMode;
+  const useSourceDaemon = runningFromSource && uiMode === "vite";
+  if (uiMode !== "daemon" && uiMode !== "vite") {
+    throw new Error(`Invalid UI mode: ${options.ui}. Use "daemon" or "vite".`);
+  }
+  if (!Number.isFinite(port)) {
+    throw new Error(`Invalid port: ${options.port}`);
+  }
+
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  if (restartDaemonWindow) {
+    await startDaemonWindow(configPath, port, true, useSourceDaemon);
+    const ready = await waitForDaemon(baseUrl);
+    if (!ready) {
+      throw new Error("Daemon failed to start. Run `devservers daemon start` to inspect.");
+    }
+  } else {
+    await ensureDaemonRunning(baseUrl, configPath, useSourceDaemon);
+    if (uiMode === "daemon") {
+      const daemonUiReady = await isDaemonUiReachable(baseUrl);
+      if (!daemonUiReady && isLoopbackHost(new URL(baseUrl).hostname)) {
+        await startDaemonWindow(configPath, port, true, useSourceDaemon);
+        const ready = await waitForDaemon(baseUrl);
+        if (!ready || !(await isDaemonUiReachable(baseUrl))) {
+          throw new Error("Daemon started but UI is not reachable at /ui/.");
+        }
+      }
+    }
+  }
+
+  if (uiMode === "vite") {
+    await startUiWindow(baseUrl, restartUiWindow);
+  }
+
+  console.log(`Manager running in tmux session '${MANAGER_SESSION}'.`);
+  if (uiMode === "vite") {
+    console.log(`UI (Vite): ${DEV_UI_URL}`);
+  } else {
+    console.log(`UI: ${formatDaemonUiUrl(baseUrl)}`);
+  }
+  console.log(`Attach: tmux attach -t ${MANAGER_SESSION}`);
 };
 
 const program = new Command();
@@ -536,62 +623,76 @@ program
     console.log(`Removed ${name}`);
   });
 
-program
-  .command("bootstrap")
+const daemonProgram = program
+  .command("daemon")
+  .description("Manage the manager daemon and UI");
+
+daemonProgram
+  .command("start")
   .description("Start the manager daemon in tmux and serve the UI")
   .option("--config <path>", "config path")
   .option("--port <port>", "daemon port", String(DAEMON_PORT))
   .option("--ui <mode>", "ui mode (daemon|vite)")
   .option("--restart", "restart the manager daemon window", false)
-  .action(async (options) => {
-    const globalOptions = program.opts<{ config?: string }>();
-    const configPath = resolveConfigPath(options.config ?? globalOptions.config);
-    const port = Number(options.port ?? DAEMON_PORT);
-    const requestedUiMode = options.ui ? String(options.ui).toLowerCase() : undefined;
-    const defaultUiMode = runningFromSource ? "vite" : "daemon";
-    const uiMode = requestedUiMode ?? defaultUiMode;
-    const useSourceDaemon = runningFromSource && uiMode === "vite";
-    if (uiMode !== "daemon" && uiMode !== "vite") {
-      throw new Error(`Invalid UI mode: ${options.ui}. Use "daemon" or "vite".`);
-    }
-    if (!Number.isFinite(port)) {
-      throw new Error(`Invalid port: ${options.port}`);
-    }
+  .action(async (options: ManagerStartOptions) => {
+    await runDaemonStart(options, Boolean(options.restart), Boolean(options.restart));
+  });
 
-    const session = "devservers";
-    const baseUrl = `http://127.0.0.1:${port}`;
+daemonProgram
+  .command("restart")
+  .description("Restart the manager daemon window")
+  .option("--config <path>", "config path")
+  .option("--port <port>", "daemon port", String(DAEMON_PORT))
+  .option("--ui <mode>", "ui mode (daemon|vite)")
+  .action(async (options: ManagerStartOptions) => {
+    await runDaemonStart(options, true, false);
+  });
 
-    if (options.restart) {
-      await startDaemonWindow(configPath, port, true, useSourceDaemon);
-      const ready = await waitForDaemon(baseUrl);
-      if (!ready) {
-        throw new Error("Daemon failed to start. Run `devservers bootstrap` to inspect.");
-      }
-    } else {
-      await ensureDaemonRunning(baseUrl, configPath, useSourceDaemon);
-      if (uiMode === "daemon") {
-        const daemonUiReady = await isDaemonUiReachable(baseUrl);
-        if (!daemonUiReady && isLoopbackHost(new URL(baseUrl).hostname)) {
-          await startDaemonWindow(configPath, port, true, useSourceDaemon);
-          const ready = await waitForDaemon(baseUrl);
-          if (!ready || !(await isDaemonUiReachable(baseUrl))) {
-            throw new Error("Daemon started but UI is not reachable at /ui/.");
-          }
-        }
-      }
-    }
+daemonProgram
+  .command("status")
+  .description("Show manager daemon and UI status")
+  .action(async () => {
+    const options = program.opts<{ daemon: string }>();
+    const daemonBaseUrl = options.daemon;
+    const daemonUiUrl = formatDaemonUiUrl(daemonBaseUrl);
+    const sessionRunning = tmuxSessionExists(MANAGER_SESSION);
+    const daemonWindowRunning = tmuxWindowExists(MANAGER_SESSION, MANAGER_DAEMON_WINDOW);
+    const uiWindowRunning = tmuxWindowExists(MANAGER_SESSION, MANAGER_UI_WINDOW);
+    const daemonReachable = await isDaemonReachable(daemonBaseUrl);
+    const daemonUiReachable = daemonReachable ? await isDaemonUiReachable(daemonBaseUrl) : false;
 
-    if (uiMode === "vite") {
-      await startUiWindow(baseUrl, Boolean(options.restart));
-    }
+    console.log(`tmux session: ${sessionRunning ? "running" : "stopped"} (${MANAGER_SESSION})`);
+    console.log(
+      `daemon window: ${daemonWindowRunning ? "running" : "stopped"} (${MANAGER_DAEMON_WINDOW})`
+    );
+    console.log(
+      `daemon http: ${daemonReachable ? "reachable" : "unreachable"} (${daemonBaseUrl})`
+    );
+    console.log(
+      `daemon ui: ${daemonUiReachable ? "reachable" : "unreachable"} (${daemonUiUrl})`
+    );
+    console.log(`vite ui window: ${uiWindowRunning ? "running" : "stopped"} (${MANAGER_UI_WINDOW})`);
+    console.log(`vite ui url: ${uiWindowRunning ? DEV_UI_URL : "not running"}`);
+  });
 
-    console.log(`Manager running in tmux session '${session}'.`);
-    if (uiMode === "vite") {
-      console.log(`UI (Vite): ${DEV_UI_URL}`);
-    } else {
-      console.log(`UI: ${baseUrl}/ui/`);
+daemonProgram
+  .command("stop")
+  .description("Stop the manager daemon and dev UI windows")
+  .action(() => {
+    const { stoppedDaemon, stoppedUi } = stopDaemonWindows();
+    if (!stoppedDaemon && !stoppedUi) {
+      console.log("Manager daemon is not running.");
+      return;
     }
-    console.log(`Attach: tmux attach -t ${session}`);
+    if (stoppedDaemon && stoppedUi) {
+      console.log("Stopped manager daemon and UI.");
+      return;
+    }
+    if (stoppedDaemon) {
+      console.log("Stopped manager daemon.");
+      return;
+    }
+    console.log("Stopped manager UI.");
   });
 
 program

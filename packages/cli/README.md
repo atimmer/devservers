@@ -9,7 +9,7 @@ pnpm add -g @24letters/devservers
 Start the manager (daemon + UI):
 
 ```
-devservers bootstrap
+devservers daemon start
 ```
 
 See CLI command overview:
@@ -21,7 +21,25 @@ devservers --help
 Run UI through Vite (hot reload):
 
 ```
-devservers bootstrap --ui vite
+devservers daemon start --ui vite
+```
+
+Check manager status:
+
+```
+devservers daemon status
+```
+
+Restart the manager daemon:
+
+```
+devservers daemon restart
+```
+
+Stop the manager:
+
+```
+devservers daemon stop
 ```
 
 Add a service:

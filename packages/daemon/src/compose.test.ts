@@ -1,5 +1,9 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { describe, expect, it } from "vitest";
-import { parseComposeServices } from "./compose.js";
+import { ComposeProjectRegistry, parseComposeServices } from "./compose.js";
 
 describe("parseComposeServices", () => {
   it("parses docker-compose style service definitions", () => {
@@ -161,5 +165,67 @@ services:
 `
       )
     ).toThrow("managed-env-file must be a string path or true");
+  });
+});
+
+describe("ComposeProjectRegistry", () => {
+  it("refreshes services after the compose file changes", async () => {
+    const rootPath = await mkdtemp(path.join(os.tmpdir(), "devservers-compose-"));
+    const composePath = path.join(rootPath, "devservers-compose.yml");
+    const registry = new ComposeProjectRegistry();
+    const logger = {
+      error: () => {}
+    };
+
+    try {
+      await writeFile(
+        composePath,
+        `
+services:
+  web:
+    command: "pnpm --filter web dev"
+`
+      );
+
+      await registry.sync(
+        [
+          {
+            name: "academy",
+            path: rootPath
+          }
+        ],
+        logger
+      );
+
+      expect(registry.getServices()).toEqual([
+        expect.objectContaining({
+          name: "academy_web",
+          command: "pnpm --filter web dev"
+        })
+      ]);
+
+      await delay(20);
+
+      await writeFile(
+        composePath,
+        `
+services:
+  web:
+    command: "pnpm --filter web dev --turbo"
+`
+      );
+
+      await registry.refresh(logger);
+
+      expect(registry.getServices()).toEqual([
+        expect.objectContaining({
+          name: "academy_web",
+          command: "pnpm --filter web dev --turbo"
+        })
+      ]);
+    } finally {
+      registry.close();
+      await rm(rootPath, { recursive: true, force: true });
+    }
   });
 });

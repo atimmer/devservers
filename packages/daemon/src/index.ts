@@ -20,6 +20,7 @@ import {
   type ServiceInfo
 } from "@24letters/devservers-shared";
 import {
+  pruneMissingRegisteredProjects,
   readConfig,
   removeRegisteredProject,
   removeService,
@@ -30,10 +31,12 @@ import {
 } from "./config.js";
 import { ComposeProjectRegistry } from "./compose.js";
 import { ensureRegistryPort, readPortRegistry } from "./port-registry.js";
+import { matchProjectWindowNames } from "./project-windows.js";
 import { resolveRepoInfo } from "./repo.js";
 import {
   capturePane,
   getServiceStatus,
+  listWindows,
   restartWindow,
   startWindow,
   stopWindow
@@ -132,11 +135,56 @@ type ServiceCatalog = {
   sources: Map<string, ServiceSourceMeta>;
 };
 
+type Logger = {
+  error: (data: Record<string, unknown>, message: string) => void;
+  warn: (data: Record<string, unknown>, message: string) => void;
+};
+
+const stopServicesForProjects = async (projectNames: string[], logger: Logger) => {
+  const windowNames = matchProjectWindowNames(await listWindows(), projectNames);
+  for (const windowName of windowNames) {
+    try {
+      await stopWindow(windowName);
+    } catch (error) {
+      logger.error(
+        { err: error, windowName },
+        "Failed to stop service for removed project"
+      );
+    } finally {
+      runtimeDetectedPorts.delete(windowName);
+      runtimeLastStartedAt.delete(windowName);
+    }
+  }
+};
+
+const readConfigWithPrunedProjects = async (logger: Logger) => {
+  const config = await readConfig(configPath);
+  const { config: nextConfig, removedProjects } = await pruneMissingRegisteredProjects(config);
+  if (removedProjects.length === 0) {
+    return config;
+  }
+
+  await writeConfig(configPath, nextConfig);
+  await composeProjects.sync(nextConfig.registeredProjects, logger);
+  await stopServicesForProjects(
+    removedProjects.map((project) => project.name),
+    logger
+  );
+  for (const project of removedProjects) {
+    logger.warn(
+      { project: project.name, path: project.path },
+      "Removed registered project with missing directory"
+    );
+  }
+  return nextConfig;
+};
+
 const buildCatalogFromConfig = async (
   config: DevServerConfig,
   logger: Logger
 ): Promise<ServiceCatalog> => {
   await composeProjects.sync(config.registeredProjects, logger);
+  await composeProjects.refresh(logger);
   const composeServices = composeProjects.getServices();
 
   const services: DevServerService[] = [];
@@ -167,7 +215,7 @@ const buildCatalogFromConfig = async (
 };
 
 const resolveServiceCatalog = async (logger: Logger): Promise<ServiceCatalog> => {
-  const config = await readConfig(configPath);
+  const config = await readConfigWithPrunedProjects(logger);
   return await buildCatalogFromConfig(config, logger);
 };
 
@@ -320,8 +368,6 @@ const detectPortFromLogs = async (service: DevServerService, baseline: string) =
   return undefined;
 };
 
-type Logger = { error: (data: Record<string, unknown>, message: string) => void };
-
 const resolveSourceMeta = (
   sources: Map<string, ServiceSourceMeta>,
   serviceName: string
@@ -345,7 +391,7 @@ const persistDetectedPort = async (
   if (sourceMeta.source !== SERVICE_SOURCES.config) {
     return;
   }
-  const config = await readConfig(configPath);
+  const config = await readConfigWithPrunedProjects(server.log);
   const current = findService(config.services, service.name);
   if (!current || current.port === port) {
     return;
@@ -363,7 +409,7 @@ const updateLastStartedAt = async (
   if (sourceMeta.source !== SERVICE_SOURCES.config) {
     return;
   }
-  const config = await readConfig(configPath);
+  const config = await readConfigWithPrunedProjects(server.log);
   const current = findService(config.services, service.name);
   if (!current) {
     return;
@@ -508,7 +554,7 @@ const restartServiceWindow = async (
 };
 
 server.get("/projects", async () => {
-  const config = await readConfig(configPath);
+  const config = await readConfigWithPrunedProjects(server.log);
   return { projects: config.registeredProjects };
 });
 
@@ -517,7 +563,7 @@ server.post("/projects", async (request, reply) => {
   if (!parsed.success) {
     return reply.code(400).send({ error: parsed.error.flatten() });
   }
-  const config = await readConfig(configPath);
+  const config = await readConfigWithPrunedProjects(request.log);
   const nextConfig = upsertRegisteredProject(config, parsed.data);
   await writeConfig(configPath, nextConfig);
   await composeProjects.sync(nextConfig.registeredProjects, request.log);
@@ -526,10 +572,11 @@ server.post("/projects", async (request, reply) => {
 
 server.delete("/projects/:name", async (request) => {
   const params = request.params as { name: string };
-  const config = await readConfig(configPath);
+  const config = await readConfigWithPrunedProjects(request.log);
   const nextConfig = removeRegisteredProject(config, params.name);
   await writeConfig(configPath, nextConfig);
   await composeProjects.sync(nextConfig.registeredProjects, request.log);
+  await stopServicesForProjects([params.name], request.log);
   return { ok: true };
 });
 
@@ -583,7 +630,7 @@ server.post("/services", async (request, reply) => {
     return reply.code(400).send({ error: parsed.error.flatten() });
   }
 
-  const config = await readConfig(configPath);
+  const config = await readConfigWithPrunedProjects(request.log);
   let currentCatalog: ServiceCatalog;
   try {
     currentCatalog = await buildCatalogFromConfig(config, request.log);
@@ -622,7 +669,7 @@ server.put("/services/:name", async (request, reply) => {
     return reply.code(400).send({ error: "name must match route param" });
   }
 
-  const config = await readConfig(configPath);
+  const config = await readConfigWithPrunedProjects(request.log);
   let currentCatalog: ServiceCatalog;
   try {
     currentCatalog = await buildCatalogFromConfig(config, request.log);
@@ -651,7 +698,7 @@ server.put("/services/:name", async (request, reply) => {
 
 server.delete("/services/:name", async (request, reply) => {
   const params = request.params as { name: string };
-  const config = await readConfig(configPath);
+  const config = await readConfigWithPrunedProjects(request.log);
   let catalog: ServiceCatalog;
   try {
     catalog = await buildCatalogFromConfig(config, request.log);
