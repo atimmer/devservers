@@ -1,34 +1,17 @@
-export type ServiceStatus = "stopped" | "running" | "error";
-export type PortMode = "static" | "detect" | "registry";
+import type {
+  DevServerService,
+  RegisteredProject,
+  ServiceActionResult,
+  ServiceInfo,
+} from "@24letters/devservers-shared";
 
-export type RepoInfo = {
-  name: string;
-  root: string;
-  workspace: string;
-};
-
-export type ServiceInfo = {
-  name: string;
-  cwd: string;
-  command: string;
-  dependsOn?: string[];
-  env?: Record<string, string>;
-  port?: number;
-  portMode?: PortMode;
-  lastStartedAt?: string;
-  source?: "config" | "compose";
-  projectName?: string;
-  projectIsMonorepo?: boolean;
-  status: ServiceStatus;
-  message?: string;
-  repo?: RepoInfo;
-};
-
-export type RegisteredProject = {
-  name: string;
-  path: string;
-  isMonorepo?: boolean;
-};
+export type {
+  PortMode,
+  RegisteredProject,
+  ServiceActionResult,
+  ServiceInfo,
+  ServiceStatus,
+} from "@24letters/devservers-shared";
 
 export type ServiceConfigDefinition = {
   source: "config" | "compose";
@@ -37,6 +20,8 @@ export type ServiceConfigDefinition = {
   path: string;
   definition: Record<string, unknown>;
 };
+
+export type ServiceInput = DevServerService;
 
 const DEFAULT_DAEMON_URL = "http://127.0.0.1:4141";
 const API_BASE =
@@ -151,25 +136,22 @@ export const getServices = async (): Promise<ServiceInfo[]> => {
   return payload.services;
 };
 
-export const addService = async (service: Omit<ServiceInfo, "status" | "message">) => {
+export const addService = async (service: ServiceInput) => {
   const response = await fetch(`${API_BASE}/services`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(service)
+    body: JSON.stringify(service),
   });
   if (!response.ok) {
     throw new Error(await readErrorMessage(response));
   }
 };
 
-export const updateService = async (
-  name: string,
-  service: Omit<ServiceInfo, "status" | "message">
-) => {
+export const updateService = async (name: string, service: ServiceInput) => {
   const response = await fetch(`${API_BASE}/services/${name}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(service)
+    body: JSON.stringify(service),
   });
   if (!response.ok) {
     throw new Error(await readErrorMessage(response));
@@ -181,6 +163,7 @@ export const deleteService = async (name: string) => {
   if (!response.ok) {
     throw new Error(await readErrorMessage(response));
   }
+  return (await response.json()) as ServiceActionResult;
 };
 
 export const getProjects = async (): Promise<RegisteredProject[]> => {
@@ -196,7 +179,7 @@ export const addProject = async (project: RegisteredProject) => {
   const response = await fetch(`${API_BASE}/projects`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(project)
+    body: JSON.stringify(project),
   });
   if (!response.ok) {
     throw new Error(await readErrorMessage(response));
@@ -210,7 +193,9 @@ export const deleteProject = async (name: string) => {
   }
 };
 
-export const getServiceConfigDefinition = async (name: string): Promise<ServiceConfigDefinition> => {
+export const getServiceConfigDefinition = async (
+  name: string,
+): Promise<ServiceConfigDefinition> => {
   const response = await fetch(`${API_BASE}/services/${name}/config`);
   if (!response.ok) {
     throw new Error(await readErrorMessage(response));
@@ -223,6 +208,7 @@ const postAction = async (name: string, action: "start" | "stop" | "restart") =>
   if (!response.ok) {
     throw new Error(await readErrorMessage(response));
   }
+  return (await response.json()) as ServiceActionResult;
 };
 
 export const startService = (name: string) => postAction(name, "start");

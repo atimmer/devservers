@@ -44,6 +44,7 @@
     "build": "tsup",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src",
+    "test": "vitest run src",
     "format": "prettier --write src"
   },
   "dependencies": {

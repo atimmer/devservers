@@ -2,7 +2,7 @@
 @import "tailwindcss";
 
 :root {
-  color-scheme: light;
+  color-scheme: dark;
 }
 
 html,
@@ -14,6 +14,37 @@ body,
 body {
   margin: 0;
   font-family: "Space Grotesk", "Segoe UI", sans-serif;
+  background: #090d12;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+@layer components {
+  .button-primary,
+  .button-danger,
+  .button-warning,
+  .button-secondary {
+    @apply inline-flex h-8 items-center justify-center border px-3 text-[11px] font-medium transition disabled:cursor-not-allowed disabled:opacity-45;
+  }
+
+  .button-primary {
+    @apply border-emerald-400/20 bg-emerald-400 text-emerald-950 hover:bg-emerald-300;
+  }
+
+  .button-danger {
+    @apply border-rose-400/20 bg-rose-400/90 text-rose-950 hover:bg-rose-300;
+  }
+
+  .button-warning {
+    @apply border-amber-400/20 bg-amber-300 text-amber-950 hover:bg-amber-200;
+  }
+
+  .button-secondary {
+    @apply border-white/15 bg-white/5 text-slate-200 hover:border-white/30 hover:bg-white/10;
+  }
 }
 
 .logs-terminal .xterm,

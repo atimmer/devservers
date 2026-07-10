@@ -15,6 +15,8 @@ devservers list
 
 devservers status
 
+devservers --json status
+
 devservers url api
 
 devservers add \
@@ -55,6 +57,12 @@ Note: `url <service>` prints a full local URL for running services (e.g. `http:/
 - `-h, --help`: show command overview
 - `-c, --config <path>`: override config file path
 - `--daemon <url>`: daemon URL (default `http://127.0.0.1:4141`)
+- `--json`: print machine-readable JSON for list, status, URL, service mutations, and lifecycle actions
+
+`add` and `remove` use the daemon validation and lifecycle routes. Removing a service therefore stops
+its managed process before deleting the config entry. Start, stop, and restart output lists services
+actually affected by dependency cascades.
+
 ## Add options
 - `--depends-on <name...>`: declare service dependencies
 - `--port <port>`: service port (optional)

@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- Service lifecycle results now report the requested target and every service actually affected by dependency cascades; the CLI exposes machine-readable `--json` output and human-readable cascade summaries.
+- Pull requests and main-branch pushes now run build, lint, typecheck, and test verification in CI.
+
+### Changed
+- Service state is now daemon-owned and reports `starting`, `running`, `stopped`, `exited`, or `error`, retaining exit codes, signals, failed-process logs, and state across daemon restarts instead of inferring errors from selected UI logs.
+- The UI now uses a compact log-focused layout with clearer working-copy hierarchy, status indicators, monospace commands and paths, persistent operation notices, cascade confirmations, conflicting-action locks, save-and-restart editing, and a shorter narrow-screen service panel.
+- The UI, daemon, and CLI have been split into focused modules, the terminal is lazy-loaded, shared API types are reused across packages, and the UI now uses stable React plus the maintained scoped xterm packages.
+- CLI service registration and removal now use daemon validation and lifecycle behavior instead of editing config independently.
+
+### Fixed
+- Deleting a running service now stops its tmux pane before removing the config entry, preventing orphaned processes.
+- Background refreshes no longer clear operation errors or repeatedly add duplicate connection failures, and service dialogs keep failures visible in context.
+- Log websocket requests are capped at 2,000 lines.
+
 ## 0.5.0 - 2026-04-28
 
 ### Changed

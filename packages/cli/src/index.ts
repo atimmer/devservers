@@ -1,198 +1,20 @@
-import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { access, cp, mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
+import { access, cp, mkdir, readdir, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
-import {
-  CONFIG_ENV_VAR,
-  DAEMON_PORT,
-  DEFAULT_CONFIG_FILENAME,
-  createDependencyGraph,
-  devServerConfigSchema,
-  devServerServiceSchema,
-  type DevServerConfig,
-  type DevServerService
-} from "@24letters/devservers-shared";
+import { DAEMON_PORT, devServerServiceSchema } from "@24letters/devservers-shared";
+import { readConfig, resolveConfigPath } from "./config.js";
+import { fetchDaemonServices, mutateService, runServiceAction } from "./daemon-client.js";
+import { ensureDaemonRunning, registerManagerCommands } from "./manager.js";
+import { formatServiceUrl, parseEnvVars, printResult } from "./service-utils.js";
 
-const defaultConfigPath = () => {
-  const home = os.homedir();
-  if (process.platform === "darwin") {
-    return path.join(
-      home,
-      "Library",
-      "Application Support",
-      "Devservers Manager",
-      DEFAULT_CONFIG_FILENAME
-    );
-  }
-  if (process.platform === "win32") {
-    const appData = process.env["APPDATA"] ?? path.join(home, "AppData", "Roaming");
-    return path.join(appData, "Devservers Manager", DEFAULT_CONFIG_FILENAME);
-  }
-  const xdgConfig = process.env["XDG_CONFIG_HOME"] ?? path.join(home, ".config");
-  return path.join(xdgConfig, "devservers", DEFAULT_CONFIG_FILENAME);
-};
-
-const resolveConfigPath = (override?: string) => {
-  if (override) {
-    return path.resolve(override);
-  }
-
-  const envPath = process.env[CONFIG_ENV_VAR];
-  if (envPath) {
-    return path.resolve(envPath);
-  }
-
-  return defaultConfigPath();
-};
-
-const readConfig = async (configPath: string): Promise<DevServerConfig> => {
-  try {
-    const raw = await readFile(configPath, "utf-8");
-    return devServerConfigSchema.parse(JSON.parse(raw));
-  } catch (error) {
-    const err = error as NodeJS.ErrnoException;
-    if (err.code === "ENOENT") {
-      return { version: 1, services: [], registeredProjects: [] };
-    }
-    throw error;
-  }
-};
-
-const writeConfig = async (configPath: string, config: DevServerConfig) => {
-  const safeConfig = devServerConfigSchema.parse(config);
-  const dir = path.dirname(configPath);
-  await mkdir(dir, { recursive: true });
-  const tempPath = path.join(dir, `.devservers.${Date.now()}.tmp`);
-  const payload = `${JSON.stringify(safeConfig, null, 2)}\n`;
-  await writeFile(tempPath, payload, "utf-8");
-  await rename(tempPath, configPath);
-};
-
-const upsertService = (
-  config: DevServerConfig,
-  service: DevServerService
-): DevServerConfig => {
-  const existingIndex = config.services.findIndex((item) => item.name === service.name);
-  if (existingIndex === -1) {
-    return { ...config, services: [...config.services, service] };
-  }
-
-  const updated = [...config.services];
-  const existing = config.services[existingIndex];
-  updated[existingIndex] = {
-    ...service,
-    lastStartedAt: service.lastStartedAt ?? existing?.lastStartedAt
-  };
-  return { ...config, services: updated };
-};
-
-const removeService = (config: DevServerConfig, name: string): DevServerConfig => {
-  return { ...config, services: config.services.filter((service) => service.name !== name) };
-};
-
-const parseEnvVars = (entries?: string[]) => {
-  if (!entries || entries.length === 0) {
-    return undefined;
-  }
-  const env: Record<string, string> = {};
-  for (const entry of entries) {
-    const [key, ...rest] = entry.split("=");
-    if (!key || rest.length === 0) {
-      throw new Error(`Invalid env entry: ${entry}`);
-    }
-    env[key] = rest.join("=");
-  }
-  return env;
-};
-
-const callDaemon = async (baseUrl: string, pathName: string, method: string) => {
-  const response = await fetch(`${baseUrl}${pathName}`, { method });
-  if (!response.ok) {
-    const message = await response.text();
-    throw new Error(message || response.statusText);
-  }
-};
-
-type DaemonServiceSummary = {
-  name: string;
-  status: string;
-  port?: number;
-};
-
-const fetchDaemonServices = async (baseUrl: string): Promise<DaemonServiceSummary[]> => {
-  const response = await fetch(`${baseUrl}/services`);
-  if (!response.ok) {
-    throw new Error(await response.text());
-  }
-  const payload = (await response.json()) as {
-    services: DaemonServiceSummary[];
-  };
-  return payload.services;
-};
-
-const normalizeUrlPath = (input?: string) => {
-  if (!input) {
-    return "/";
-  }
-  return input.startsWith("/") ? input : `/${input}`;
-};
-
-const formatServiceUrl = (scheme: string, host: string, port: number, pathname: string) => {
-  if (!Number.isInteger(port) || port <= 0 || port > 65535) {
-    throw new Error(`Cannot format URL: invalid port ${String(port)}`);
-  }
-  try {
-    const url = new URL(`${scheme}://${host}`);
-    url.port = String(port);
-    url.pathname = normalizeUrlPath(pathname);
-    return url.toString();
-  } catch (error) {
-    throw new Error(
-      `Cannot format URL: ${error instanceof Error ? error.message : "invalid URL inputs"}`
-    );
-  }
-};
-
-const require = createRequire(import.meta.url);
-const daemonEntry = require.resolve("@24letters/devservers-daemon");
-const cliEntryPath = fileURLToPath(import.meta.url);
-const packageRoot = path.resolve(path.dirname(cliEntryPath), "..");
-const runningFromSource = path.basename(path.dirname(cliEntryPath)) === "src";
+const packageJson = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf-8"),
+) as { version?: string };
+const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const skillsRoot = path.join(packageRoot, "skills");
-const packageJsonPath = fileURLToPath(new URL("../package.json", import.meta.url));
-const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf-8")) as { version?: string };
-const MANAGER_SESSION = "devservers";
-const MANAGER_DAEMON_WINDOW = "manager-daemon";
-const MANAGER_UI_WINDOW = "manager-ui";
-
-const AGENT_HOME_ENV: Record<string, string> = {
-  codex: "CODEX_HOME",
-  claude: "CLAUDE_HOME",
-  cursor: "CURSOR_HOME",
-  windsurf: "WINDSURF_HOME"
-};
-
-const resolveAgentHome = (agentInput?: string) => {
-  const normalized = agentInput?.trim().toLowerCase() || "codex";
-  const envKey = AGENT_HOME_ENV[normalized] ?? `${normalized.toUpperCase()}_HOME`;
-  const envValue = process.env[envKey];
-  if (envValue) {
-    return path.resolve(envValue);
-  }
-  return path.join(os.homedir(), `.${normalized}`);
-};
-
-const IDLE_COMMANDS = new Set(["zsh", "bash", "sh", "fish", "nu", "elvish", "xonsh", "login"]);
-const userShell = process.env["SHELL"] ? path.basename(process.env["SHELL"]) : "";
-if (userShell) {
-  IDLE_COMMANDS.add(userShell);
-}
-
 const pathExists = async (target: string) => {
   try {
     await access(target);
@@ -200,311 +22,6 @@ const pathExists = async (target: string) => {
   } catch {
     return false;
   }
-};
-
-const shellQuote = (value: string) => `'${value.replace(/'/g, "'\\''")}'`;
-
-const runTmux = (args: string[], allowFailure = false) => {
-  const result = spawnSync("tmux", args, { encoding: "utf-8" });
-  if (result.error) {
-    const error = result.error as NodeJS.ErrnoException;
-    if (error.code === "ENOENT") {
-      throw new Error("tmux is required. Install it first and retry.");
-    }
-    throw error;
-  }
-  if (result.status !== 0 && !allowFailure) {
-    throw new Error(result.stderr?.trim() || `tmux ${args.join(" ")} failed`);
-  }
-  return result;
-};
-
-const tmuxSessionExists = (session: string) => {
-  return runTmux(["has-session", "-t", session], true).status === 0;
-};
-
-const tmuxWindowNames = (session: string) => {
-  const result = runTmux(["list-windows", "-t", session, "-F", "#{window_name}"], true);
-  if (result.status !== 0 || !result.stdout) {
-    return [];
-  }
-  return result.stdout
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
-};
-
-const tmuxWindowExists = (session: string, windowName: string) => {
-  return tmuxWindowNames(session).includes(windowName);
-};
-
-const tmuxStopWindow = (session: string, windowName: string) => {
-  if (!tmuxWindowExists(session, windowName)) {
-    return false;
-  }
-  runTmux(["kill-window", "-t", `${session}:${windowName}`]);
-  return true;
-};
-
-const tmuxPaneCommand = (session: string, windowName: string) => {
-  const result = runTmux(
-    ["display-message", "-t", `${session}:${windowName}`, "-p", "#{pane_current_command}"],
-    true
-  );
-  if (result.status !== 0 || !result.stdout) {
-    return "";
-  }
-  return result.stdout.trim();
-};
-
-const tmuxPaneIdle = (session: string, windowName: string) => {
-  return IDLE_COMMANDS.has(tmuxPaneCommand(session, windowName));
-};
-
-const tmuxStartWindow = (
-  session: string,
-  windowName: string,
-  command: string,
-  cwd: string,
-  restart: boolean
-) => {
-  const commandWithCwd = `cd ${shellQuote(cwd)} && ${command}`;
-  if (tmuxWindowExists(session, windowName)) {
-    if (!restart) {
-      if (tmuxPaneIdle(session, windowName)) {
-        runTmux(["send-keys", "-t", `${session}:${windowName}`, commandWithCwd, "C-m"]);
-      }
-      return;
-    }
-    runTmux(["kill-window", "-t", `${session}:${windowName}`]);
-  }
-
-  runTmux(["new-window", "-d", "-t", session, "-n", windowName, "-c", cwd]);
-  runTmux(["send-keys", "-t", `${session}:${windowName}`, commandWithCwd, "C-m"]);
-};
-
-const localDaemonRoot = path.resolve(packageRoot, "..", "daemon");
-const localDaemonEntry = path.join(localDaemonRoot, "src", "index.ts");
-const localUiRoot = path.resolve(packageRoot, "..", "..", "apps", "ui");
-const localUiPackageJson = path.join(localUiRoot, "package.json");
-const DEV_UI_PORT = 4142;
-const DEV_UI_URL = `http://localhost:${DEV_UI_PORT}/`;
-
-const buildDaemonCommand = (entry: string, configPath: string, port: number) => {
-  return [
-    shellQuote(process.execPath),
-    shellQuote(entry),
-    "--config",
-    shellQuote(configPath),
-    "--port",
-    shellQuote(String(port))
-  ].join(" ");
-};
-
-const buildDevDaemonCommand = (configPath: string, port: number) => {
-  return [
-    "pnpm",
-    "-C",
-    shellQuote(localDaemonRoot),
-    "dev",
-    "--",
-    "--config",
-    shellQuote(configPath),
-    "--port",
-    shellQuote(String(port))
-  ].join(" ");
-};
-
-const resolveDaemonCommand = async (configPath: string, port: number, useSourceDaemon: boolean) => {
-  if (useSourceDaemon && (await pathExists(localDaemonEntry))) {
-    return buildDevDaemonCommand(configPath, port);
-  }
-  if (!(await pathExists(daemonEntry))) {
-    throw new Error(
-      "Daemon build not found. Run `pnpm -C packages/daemon build` (or `pnpm -r build`) before bootstrapping."
-    );
-  }
-  return buildDaemonCommand(daemonEntry, configPath, port);
-};
-
-const startDaemonWindow = async (
-  configPath: string,
-  port: number,
-  restart: boolean,
-  useSourceDaemon = runningFromSource
-) => {
-  const cwd = process.cwd();
-  const daemonCommand = await resolveDaemonCommand(configPath, port, useSourceDaemon);
-
-  if (!tmuxSessionExists(MANAGER_SESSION)) {
-    runTmux([
-      "new-session",
-      "-d",
-      "-s",
-      MANAGER_SESSION,
-      "-n",
-      MANAGER_DAEMON_WINDOW,
-      "-c",
-      cwd
-    ]);
-    runTmux(["send-keys", "-t", `${MANAGER_SESSION}:${MANAGER_DAEMON_WINDOW}`, daemonCommand, "C-m"]);
-  } else {
-    tmuxStartWindow(MANAGER_SESSION, MANAGER_DAEMON_WINDOW, daemonCommand, cwd, restart);
-  }
-};
-
-const buildDevUiCommand = (daemonBaseUrl: string) => {
-  return [
-    `VITE_DAEMON_URL=${shellQuote(daemonBaseUrl)}`,
-    "pnpm",
-    "-C",
-    shellQuote(localUiRoot),
-    "dev"
-  ].join(" ");
-};
-
-const startUiWindow = async (daemonBaseUrl: string, restart: boolean) => {
-  if (!(await pathExists(localUiPackageJson))) {
-    throw new Error(
-      "UI source not found for Vite mode. Run from the repo source tree or use `--ui daemon`."
-    );
-  }
-
-  const cwd = process.cwd();
-  const uiCommand = buildDevUiCommand(daemonBaseUrl);
-
-  if (!tmuxSessionExists(MANAGER_SESSION)) {
-    runTmux(["new-session", "-d", "-s", MANAGER_SESSION, "-n", MANAGER_UI_WINDOW, "-c", cwd]);
-    runTmux(["send-keys", "-t", `${MANAGER_SESSION}:${MANAGER_UI_WINDOW}`, uiCommand, "C-m"]);
-    return;
-  }
-
-  tmuxStartWindow(MANAGER_SESSION, MANAGER_UI_WINDOW, uiCommand, cwd, restart);
-};
-
-const isLoopbackHost = (hostname: string) => {
-  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
-};
-
-const isDaemonReachable = async (baseUrl: string) => {
-  try {
-    await fetch(`${baseUrl}/services`);
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-const isDaemonUiReachable = async (baseUrl: string) => {
-  try {
-    const response = await fetch(`${baseUrl}/ui/`);
-    return response.ok;
-  } catch {
-    return false;
-  }
-};
-
-const waitForDaemon = async (baseUrl: string, attempts = 20, delayMs = 250) => {
-  for (let i = 0; i < attempts; i += 1) {
-    if (await isDaemonReachable(baseUrl)) {
-      return true;
-    }
-    await delay(delayMs);
-  }
-  return false;
-};
-
-const ensureDaemonRunning = async (
-  baseUrl: string,
-  configPath: string,
-  useSourceDaemon = runningFromSource
-) => {
-  if (await isDaemonReachable(baseUrl)) {
-    return;
-  }
-
-  const url = new URL(baseUrl);
-  if (!isLoopbackHost(url.hostname)) {
-    return;
-  }
-
-  const port = url.port ? Number(url.port) : DAEMON_PORT;
-  await startDaemonWindow(configPath, port, false, useSourceDaemon);
-  const ready = await waitForDaemon(baseUrl);
-  if (!ready) {
-    throw new Error("Daemon failed to start. Run `devservers daemon start` to inspect.");
-  }
-};
-
-const stopDaemonWindows = () => {
-  const stoppedUi = tmuxStopWindow(MANAGER_SESSION, MANAGER_UI_WINDOW);
-  const stoppedDaemon = tmuxStopWindow(MANAGER_SESSION, MANAGER_DAEMON_WINDOW);
-  return { stoppedDaemon, stoppedUi };
-};
-
-const formatDaemonUiUrl = (baseUrl: string) => {
-  return new URL("/ui/", baseUrl).toString();
-};
-
-type ManagerStartOptions = {
-  config?: string;
-  port?: string;
-  ui?: string;
-  restart?: boolean;
-};
-
-const runDaemonStart = async (
-  options: ManagerStartOptions,
-  restartDaemonWindow: boolean,
-  restartUiWindow: boolean
-) => {
-  const globalOptions = program.opts<{ config?: string }>();
-  const configPath = resolveConfigPath(options.config ?? globalOptions.config);
-  const port = Number(options.port ?? DAEMON_PORT);
-  const requestedUiMode = options.ui ? String(options.ui).toLowerCase() : undefined;
-  const defaultUiMode = runningFromSource ? "vite" : "daemon";
-  const uiMode = requestedUiMode ?? defaultUiMode;
-  const useSourceDaemon = runningFromSource && uiMode === "vite";
-  if (uiMode !== "daemon" && uiMode !== "vite") {
-    throw new Error(`Invalid UI mode: ${options.ui}. Use "daemon" or "vite".`);
-  }
-  if (!Number.isFinite(port)) {
-    throw new Error(`Invalid port: ${options.port}`);
-  }
-
-  const baseUrl = `http://127.0.0.1:${port}`;
-
-  if (restartDaemonWindow) {
-    await startDaemonWindow(configPath, port, true, useSourceDaemon);
-    const ready = await waitForDaemon(baseUrl);
-    if (!ready) {
-      throw new Error("Daemon failed to start. Run `devservers daemon start` to inspect.");
-    }
-  } else {
-    await ensureDaemonRunning(baseUrl, configPath, useSourceDaemon);
-    if (uiMode === "daemon") {
-      const daemonUiReady = await isDaemonUiReachable(baseUrl);
-      if (!daemonUiReady && isLoopbackHost(new URL(baseUrl).hostname)) {
-        await startDaemonWindow(configPath, port, true, useSourceDaemon);
-        const ready = await waitForDaemon(baseUrl);
-        if (!ready || !(await isDaemonUiReachable(baseUrl))) {
-          throw new Error("Daemon started but UI is not reachable at /ui/.");
-        }
-      }
-    }
-  }
-
-  if (uiMode === "vite") {
-    await startUiWindow(baseUrl, restartUiWindow);
-  }
-
-  console.log(`Manager running in tmux session '${MANAGER_SESSION}'.`);
-  if (uiMode === "vite") {
-    console.log(`UI (Vite): ${DEV_UI_URL}`);
-  } else {
-    console.log(`UI: ${formatDaemonUiUrl(baseUrl)}`);
-  }
-  console.log(`Attach: tmux attach -t ${MANAGER_SESSION}`);
 };
 
 const program = new Command();
@@ -516,34 +33,45 @@ program
   .showHelpAfterError("(run with --help for command overview)")
   .addHelpText("after", "\nTip: run `devservers <command> --help` for command-specific options.")
   .option("-c, --config <path>", "config path")
-  .option("--daemon <url>", "daemon base URL", `http://127.0.0.1:${DAEMON_PORT}`);
+  .option("--daemon <url>", "daemon base URL", `http://127.0.0.1:${DAEMON_PORT}`)
+  .option("--json", "print machine-readable JSON", false);
+
+const globalOptions = () => program.opts<{ config?: string; daemon: string; json: boolean }>();
+const readyDaemon = async () => {
+  const options = globalOptions();
+  await ensureDaemonRunning(options.daemon, resolveConfigPath(options.config));
+  return options;
+};
 
 program
   .command("list")
   .description("List configured services")
   .action(async () => {
-    const options = program.opts<{ config?: string }>();
-    const configPath = resolveConfigPath(options.config);
-    const config = await readConfig(configPath);
-    if (config.services.length === 0) {
-      console.log("No services configured.");
-      return;
-    }
-    for (const service of config.services) {
-      console.log(`${service.name} -> ${service.command} (${service.cwd})`);
-    }
+    const options = globalOptions();
+    const services = (await readConfig(resolveConfigPath(options.config))).services;
+    if (options.json) return console.log(JSON.stringify({ services }));
+    if (!services.length) return console.log("No services configured.");
+    services.forEach((service) =>
+      console.log(`${service.name} -> ${service.command} (${service.cwd})`),
+    );
   });
 
 program
   .command("status")
   .description("Show running status from daemon")
   .action(async () => {
-    const options = program.opts<{ daemon: string }>();
+    const options = await readyDaemon();
     const services = await fetchDaemonServices(options.daemon);
-    for (const service of services) {
-      const portLabel = typeof service.port === "number" ? ` (port ${service.port})` : "";
-      console.log(`${service.name}: ${service.status}${portLabel}`);
-    }
+    if (options.json) return console.log(JSON.stringify({ services }));
+    services.forEach((service) => {
+      const details = [
+        typeof service.port === "number" ? `port ${service.port}` : undefined,
+        typeof service.exitCode === "number" ? `exit ${service.exitCode}` : undefined,
+      ].filter(Boolean);
+      console.log(
+        `${service.name}: ${service.status}${details.length ? ` (${details.join(", ")})` : ""}`,
+      );
+    });
   });
 
 program
@@ -553,32 +81,17 @@ program
   .option("--scheme <scheme>", "URL scheme", "http")
   .option("--host <host>", "URL host", "localhost")
   .option("--path <path>", "URL path", "/")
-  .action(
-    async (
-      serviceName: string,
-      options: { scheme: string; host: string; path: string }
-    ) => {
-      const programOptions = program.opts<{ daemon: string; config?: string }>();
-      const configPath = resolveConfigPath(programOptions.config);
-      await ensureDaemonRunning(programOptions.daemon, configPath);
-      const services = await fetchDaemonServices(programOptions.daemon);
-      const service = services.find((entry) => entry.name === serviceName);
-      if (!service) {
-        throw new Error(`Unknown service: ${serviceName}`);
-      }
-      if (service.status !== "running") {
-        throw new Error(
-          `Service '${serviceName}' is ${service.status}. Start it first, then retry.`
-        );
-      }
-      if (typeof service.port !== "number") {
-        throw new Error(
-          `Service '${serviceName}' is running but no port is known yet. Retry in a few seconds.`
-        );
-      }
-      console.log(formatServiceUrl(options.scheme, options.host, service.port, options.path));
-    }
-  );
+  .action(async (name: string, options: { scheme: string; host: string; path: string }) => {
+    const global = await readyDaemon();
+    const service = (await fetchDaemonServices(global.daemon)).find((entry) => entry.name === name);
+    if (!service) throw new Error(`Unknown service: ${name}`);
+    if (service.status !== "running")
+      throw new Error(`Service '${name}' is ${service.status}. Start it first, then retry.`);
+    if (typeof service.port !== "number")
+      throw new Error(`Service '${name}' is running but no port is known yet.`);
+    const url = formatServiceUrl(options.scheme, options.host, service.port, options.path);
+    printResult({ service: name, url }, global.json, url);
+  });
 
 program
   .command("add")
@@ -591,8 +104,7 @@ program
   .option("--depends-on <name...>", "Service dependencies")
   .option("--env <entry...>", "Environment variables (KEY=VALUE)")
   .action(async (options) => {
-    const programOptions = program.opts<{ config?: string }>();
-    const configPath = resolveConfigPath(programOptions.config);
+    const global = await readyDaemon();
     const service = devServerServiceSchema.parse({
       name: options.name,
       cwd: options.cwd,
@@ -600,171 +112,81 @@ program
       port: options.port ? Number(options.port) : undefined,
       portMode: options.portMode,
       env: parseEnvVars(options.env),
-      dependsOn: options.dependsOn
+      dependsOn: options.dependsOn,
     });
-
-    const config = await readConfig(configPath);
-    const nextConfig = upsertService(config, service);
-    createDependencyGraph(nextConfig.services);
-    await writeConfig(configPath, nextConfig);
-    console.log(`Saved ${service.name}`);
+    const result = await mutateService(global.daemon, service.name, "PUT", service);
+    printResult(result, global.json, `Saved ${service.name}`);
   });
 
 program
   .command("remove")
-  .description("Remove a service")
+  .description("Stop and remove a service")
   .argument("<name>")
   .action(async (name: string) => {
-    const options = program.opts<{ config?: string }>();
-    const configPath = resolveConfigPath(options.config);
-    const config = await readConfig(configPath);
-    const nextConfig = removeService(config, name);
-    await writeConfig(configPath, nextConfig);
-    console.log(`Removed ${name}`);
+    const options = await readyDaemon();
+    const result = await mutateService(options.daemon, name, "DELETE");
+    printResult(result, options.json, `Removed ${name}`);
   });
 
-const daemonProgram = program
-  .command("daemon")
-  .description("Manage the manager daemon and UI");
-
-daemonProgram
-  .command("start")
-  .description("Start the manager daemon in tmux and serve the UI")
-  .option("--config <path>", "config path")
-  .option("--port <port>", "daemon port", String(DAEMON_PORT))
-  .option("--ui <mode>", "ui mode (daemon|vite)")
-  .option("--restart", "restart the manager daemon window", false)
-  .action(async (options: ManagerStartOptions) => {
-    await runDaemonStart(options, Boolean(options.restart), Boolean(options.restart));
-  });
-
-daemonProgram
-  .command("restart")
-  .description("Restart the manager daemon window")
-  .option("--config <path>", "config path")
-  .option("--port <port>", "daemon port", String(DAEMON_PORT))
-  .option("--ui <mode>", "ui mode (daemon|vite)")
-  .action(async (options: ManagerStartOptions) => {
-    await runDaemonStart(options, true, false);
-  });
-
-daemonProgram
-  .command("status")
-  .description("Show manager daemon and UI status")
-  .action(async () => {
-    const options = program.opts<{ daemon: string }>();
-    const daemonBaseUrl = options.daemon;
-    const daemonUiUrl = formatDaemonUiUrl(daemonBaseUrl);
-    const sessionRunning = tmuxSessionExists(MANAGER_SESSION);
-    const daemonWindowRunning = tmuxWindowExists(MANAGER_SESSION, MANAGER_DAEMON_WINDOW);
-    const uiWindowRunning = tmuxWindowExists(MANAGER_SESSION, MANAGER_UI_WINDOW);
-    const daemonReachable = await isDaemonReachable(daemonBaseUrl);
-    const daemonUiReachable = daemonReachable ? await isDaemonUiReachable(daemonBaseUrl) : false;
-
-    console.log(`tmux session: ${sessionRunning ? "running" : "stopped"} (${MANAGER_SESSION})`);
-    console.log(
-      `daemon window: ${daemonWindowRunning ? "running" : "stopped"} (${MANAGER_DAEMON_WINDOW})`
-    );
-    console.log(
-      `daemon http: ${daemonReachable ? "reachable" : "unreachable"} (${daemonBaseUrl})`
-    );
-    console.log(
-      `daemon ui: ${daemonUiReachable ? "reachable" : "unreachable"} (${daemonUiUrl})`
-    );
-    console.log(`vite ui window: ${uiWindowRunning ? "running" : "stopped"} (${MANAGER_UI_WINDOW})`);
-    console.log(`vite ui url: ${uiWindowRunning ? DEV_UI_URL : "not running"}`);
-  });
-
-daemonProgram
-  .command("stop")
-  .description("Stop the manager daemon and dev UI windows")
-  .action(() => {
-    const { stoppedDaemon, stoppedUi } = stopDaemonWindows();
-    if (!stoppedDaemon && !stoppedUi) {
-      console.log("Manager daemon is not running.");
-      return;
-    }
-    if (stoppedDaemon && stoppedUi) {
-      console.log("Stopped manager daemon and UI.");
-      return;
-    }
-    if (stoppedDaemon) {
-      console.log("Stopped manager daemon.");
-      return;
-    }
-    console.log("Stopped manager UI.");
-  });
+registerManagerCommands(program);
 
 program
   .command("install-skill")
   .description("Install Devservers Manager skills for your AI agent")
   .argument("[name]", "skill name (default: install all)")
-  .option("--agent <name>", "agent name (default: codex)")
+  .option("--agent <name>", "agent name", "codex")
   .option("--dest <path>", "skills directory")
   .option("--dry-run", "show what would be installed", false)
   .option("--force", "overwrite existing skills", false)
   .action(async (name: string | undefined, options) => {
-    if (!(await pathExists(skillsRoot))) {
+    if (!(await pathExists(skillsRoot)))
       throw new Error(`Skills directory not found at ${skillsRoot}`);
-    }
-
-    const entries = await readdir(skillsRoot, { withFileTypes: true });
-    const available = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+    const available = (await readdir(skillsRoot, { withFileTypes: true }))
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
     const targets = name ? [name] : available;
-
-    if (name && !available.includes(name)) {
+    if (name && !available.includes(name))
       throw new Error(`Unknown skill '${name}'. Available: ${available.sort().join(", ")}`);
-    }
-
-    const agentHome = resolveAgentHome(options.agent);
-    const destRoot = path.resolve(options.dest ?? path.join(agentHome, "skills"));
-
-    if (options.dryRun) {
-      console.log(`Would install: ${targets.sort().join(", ")}`);
-      console.log(`Destination: ${destRoot}`);
-      return;
-    }
-
-    await mkdir(destRoot, { recursive: true });
-
-    for (const skillName of targets) {
-      const src = path.join(skillsRoot, skillName);
-      const dest = path.join(destRoot, skillName);
-      const srcStat = await stat(src);
-      if (!srcStat.isDirectory()) {
+    const envKey = `${String(options.agent).toUpperCase()}_HOME`;
+    const agentHome = process.env[envKey] ?? path.join(os.homedir(), `.${options.agent}`);
+    const destination = path.resolve(options.dest ?? path.join(agentHome, "skills"));
+    if (options.dryRun)
+      return console.log(
+        `Would install: ${targets.sort().join(", ")}\nDestination: ${destination}`,
+      );
+    await mkdir(destination, { recursive: true });
+    for (const skill of targets) {
+      const source = path.join(skillsRoot, skill);
+      const target = path.join(destination, skill);
+      if (!(await stat(source)).isDirectory()) continue;
+      if ((await pathExists(target)) && !options.force) {
+        console.log(`Skipping ${skill} (already exists). Use --force to overwrite.`);
         continue;
       }
-      if ((await pathExists(dest)) && !options.force) {
-        console.log(`Skipping ${skillName} (already exists). Use --force to overwrite.`);
-        continue;
-      }
-      await cp(src, dest, { recursive: true });
-      console.log(`Installed ${skillName}`);
+      await cp(source, target, { recursive: true });
+      console.log(`Installed ${skill}`);
     }
   });
 
-const daemonCommand = (
-  name: string,
-  pathName: string,
-  description: string,
-  pastTense: string
+const actionCommand = (
+  action: "start" | "stop" | "restart",
+  label: string,
+  pastTense: string,
 ) => {
   program
-    .command(name)
-    .description(description)
+    .command(action)
+    .description(`${label} a service via the daemon`)
     .argument("<service>")
     .action(async (service: string) => {
-      const options = program.opts<{ daemon: string; config?: string }>();
-      const configPath = resolveConfigPath(options.config);
-      await ensureDaemonRunning(options.daemon, configPath);
-      await callDaemon(options.daemon, `/services/${service}/${pathName}`, "POST");
-      console.log(`${pastTense} ${service}`);
+      const options = await readyDaemon();
+      const result = await runServiceAction(options.daemon, service, action);
+      const affected = result.affected?.length ? ` (${result.affected.join(", ")})` : "";
+      printResult(result, options.json, `${pastTense} ${service}${affected}`);
     });
 };
-
-daemonCommand("start", "start", "Start a service via the daemon", "Started");
-daemonCommand("stop", "stop", "Stop a service via the daemon", "Stopped");
-daemonCommand("restart", "restart", "Restart a service via the daemon", "Restarted");
+actionCommand("start", "Start", "Started");
+actionCommand("stop", "Stop", "Stopped");
+actionCommand("restart", "Restart", "Restarted");
 
 program.parseAsync(process.argv).catch((error) => {
   console.error(error instanceof Error ? error.message : error);

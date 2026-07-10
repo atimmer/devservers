@@ -1,11 +1,19 @@
 import { execa } from "execa";
 import { setTimeout as delay } from "node:timers/promises";
-import type { DevServerService, ServiceStatus } from "@24letters/devservers-shared";
+import type { DevServerService, ServiceInfo } from "@24letters/devservers-shared";
 import { resolveEnv } from "./env.js";
 import { writeManagedEnvFile } from "./managed-env-file.js";
+import { parsePaneRuntime } from "./service-runtime.js";
 
 const SESSION_NAME = "devservers";
-const IDLE_COMMANDS = new Set(["zsh", "bash", "sh", "fish"]);
+const MANAGED_PANE_OPTION = "@devservers-managed";
+const PANE_RUNTIME_FORMAT = [
+  "#{pane_dead}",
+  "#{pane_dead_status}",
+  "#{pane_dead_signal}",
+  "#{pane_current_command}",
+  `#{${MANAGED_PANE_OPTION}}`
+].join("\t");
 
 const runTmux = async (args: string[]) => {
   return await execa("tmux", args);
@@ -61,24 +69,17 @@ export const windowExists = async (windowName: string) => {
   return windows.includes(windowName);
 };
 
-const getPaneCommand = async (windowName: string) => {
-  try {
-    const { stdout } = await runTmux([
-      "display-message",
-      "-t",
-      `${SESSION_NAME}:${windowName}`,
-      "-p",
-      "#{pane_current_command}"
-    ]);
-    return stdout.trim();
-  } catch {
-    return "";
-  }
-};
-
-const isPaneIdle = async (windowName: string) => {
-  const command = await getPaneCommand(windowName);
-  return IDLE_COMMANDS.has(command);
+const getPaneRuntime = async (
+  windowName: string
+): Promise<Pick<ServiceInfo, "status" | "message" | "exitCode" | "exitSignal">> => {
+  const { stdout } = await runTmux([
+    "display-message",
+    "-t",
+    `${SESSION_NAME}:${windowName}`,
+    "-p",
+    PANE_RUNTIME_FORMAT
+  ]);
+  return parsePaneRuntime(stdout);
 };
 
 export const startWindow = async (
@@ -94,8 +95,8 @@ export const startWindow = async (
 
   const exists = await windowExists(service.name);
   if (exists) {
-    const [dead, idle] = await Promise.all([isPaneDead(service.name), isPaneIdle(service.name)]);
-    if (!dead && !idle) {
+    const runtime = await getPaneRuntime(service.name);
+    if (runtime.status === "running") {
       return false;
     }
     try {
@@ -115,14 +116,17 @@ export const startWindow = async (
     "-c",
     service.cwd
   ]);
-  await runTmux(["send-keys", "-t", `${SESSION_NAME}:${service.name}`, command, "C-m"]);
+  const target = `${SESSION_NAME}:${service.name}`;
+  await runTmux(["set-option", "-p", "-t", target, "remain-on-exit", "on"]);
+  await runTmux(["set-option", "-p", "-t", target, MANAGED_PANE_OPTION, "1"]);
+  await runTmux(["respawn-pane", "-k", "-t", target, "-c", service.cwd, command]);
   return true;
 };
 
-export const stopWindow = async (windowName: string) => {
+export const stopWindow = async (windowName: string): Promise<boolean> => {
   const exists = await windowExists(windowName);
   if (!exists) {
-    return;
+    return false;
   }
   await runTmux(["send-keys", "-t", `${SESSION_NAME}:${windowName}`, "C-c"]);
   await delay(200);
@@ -131,6 +135,7 @@ export const stopWindow = async (windowName: string) => {
   } catch {
     // window may have closed after stopping
   }
+  return true;
 };
 
 export const restartWindow = async (
@@ -140,21 +145,6 @@ export const restartWindow = async (
   await stopWindow(service.name);
   await delay(300);
   return await startWindow(service, options);
-};
-
-export const isPaneDead = async (windowName: string) => {
-  try {
-    const { stdout } = await runTmux([
-      "list-panes",
-      "-t",
-      `${SESSION_NAME}:${windowName}`,
-      "-F",
-      "#{pane_dead}"
-    ]);
-    return stdout.trim() === "1";
-  } catch {
-    return false;
-  }
 };
 
 export const capturePane = async (
@@ -182,21 +172,17 @@ export const capturePane = async (
   return stdout;
 };
 
-export const getServiceStatus = async (service: DevServerService): Promise<ServiceStatus> => {
-  const exists = await windowExists(service.name);
+export const getServiceRuntime = async (
+  service: DevServerService,
+  windowNames?: ReadonlySet<string>
+): Promise<Pick<ServiceInfo, "status" | "message" | "exitCode" | "exitSignal">> => {
+  const exists = windowNames ? windowNames.has(service.name) : await windowExists(service.name);
   if (!exists) {
-    return "stopped";
+    return { status: "stopped" };
   }
-
-  const dead = await isPaneDead(service.name);
-  if (dead) {
-    return "error";
+  try {
+    return await getPaneRuntime(service.name);
+  } catch {
+    return { status: "error", message: "Unable to inspect service process." };
   }
-
-  const idle = await isPaneIdle(service.name);
-  if (idle) {
-    return "stopped";
-  }
-
-  return "running";
 };

@@ -6,7 +6,7 @@
 - In production, the daemon serves the UI at `/ui/`.
 - Daemon manages tmux session `devservers` and exposes REST + WS APIs.
 - CLI is a thin wrapper over config + daemon endpoints.
-- Desktop UI uses a right sidebar: fuzzy search at top, started services pinned first, then working-copy groups sorted by working-directory name.
+- Desktop UI uses a compact left sidebar with fuzzy search, working-copy hierarchy, status dots, and per-group running counts; the main pane prioritizes service controls and logs.
 
 ## Process model
 
@@ -17,9 +17,14 @@
 
 ## Status detection
 
-- `stopped`: window doesn\'t exist
-- `running`: window exists and pane is alive
-- `error`: tmux reports pane dead
+- `starting`: the daemon is preparing or launching the service pane.
+- `running`: the managed pane process is alive.
+- `stopped`: no service window exists, or a legacy unmanaged pane is idle.
+- `exited`: the managed process completed successfully; its pane and logs are retained.
+- `error`: the managed process failed, including its exit code or signal when tmux provides it.
+
+New service panes run the configured command directly with tmux `remain-on-exit`, so exit state and
+logs survive daemon restarts. Legacy panes remain compatible and migrate the next time they start.
 
 ## Logs
 

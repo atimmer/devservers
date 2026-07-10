@@ -43,7 +43,16 @@ export type DevServerService = z.infer<typeof devServerServiceSchema>;
 export type RegisteredProject = z.infer<typeof registeredProjectSchema>;
 export type DevServerConfig = z.infer<typeof devServerConfigSchema>;
 
-export type ServiceStatus = "stopped" | "running" | "error";
+export type ServiceStatus = "starting" | "running" | "stopped" | "exited" | "error";
+
+export type ServiceAction = "start" | "stop" | "restart" | "delete";
+
+export type ServiceActionResult = {
+  ok: true;
+  action: ServiceAction;
+  target: string;
+  affected: string[];
+};
 
 export type RepoInfo = {
   name: string;
@@ -54,6 +63,8 @@ export type RepoInfo = {
 export type ServiceInfo = DevServerService & {
   status: ServiceStatus;
   message?: string;
+  exitCode?: number;
+  exitSignal?: string;
   repo?: RepoInfo;
   source?: "config" | "compose";
   projectName?: string;
