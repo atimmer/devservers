@@ -103,6 +103,9 @@ export const statusDetail = (service: ServiceInfo) => {
 
 export const isServiceBusy = (status: ServiceStatus) => status === "starting";
 
+export const isServiceActive = (status: ServiceStatus) =>
+  status === "starting" || status === "running";
+
 export const getStopImpact = (services: ServiceInfo[], target: string) => {
   const affected = new Set([target]);
   let changed = true;

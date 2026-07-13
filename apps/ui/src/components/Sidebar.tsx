@@ -1,6 +1,12 @@
 import { useMemo } from "react";
 import type { ServiceInfo } from "../api";
-import { fuzzyMatch, type MainSelection, type WorkingCopyGroup } from "../dashboard";
+import {
+  compareByMostRecentlyStarted,
+  fuzzyMatch,
+  isServiceActive,
+  type MainSelection,
+  type WorkingCopyGroup,
+} from "../dashboard";
 import { StatusDot } from "./Status";
 
 type Props = {
@@ -38,6 +44,16 @@ const ServiceRow = ({
 );
 
 export function Sidebar({ services, groups, query, selection, onQueryChange, onSelect }: Props) {
+  const startedServices = useMemo(
+    () =>
+      services
+        .filter(
+          (service) =>
+            isServiceActive(service.status) && fuzzyMatch(query, service.name, service.command),
+        )
+        .sort(compareByMostRecentlyStarted),
+    [query, services],
+  );
   const filteredGroups = useMemo(
     () =>
       groups
@@ -70,7 +86,36 @@ export function Sidebar({ services, groups, query, selection, onQueryChange, onS
             />
           </label>
         </div>
+        {startedServices.length > 0 ? (
+          <section className="border-b border-emerald-300/15 bg-emerald-300/[0.035] p-2">
+            <div className="flex items-center justify-between px-2 pb-1.5">
+              <h3 className="text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-300">
+                Started
+              </h3>
+              <span className="font-mono text-[10px] text-emerald-300/70">
+                {startedServices.length}
+              </span>
+            </div>
+            <div className="max-h-36 overflow-y-auto" aria-label="Started services">
+              {startedServices.map((service) => (
+                <ServiceRow
+                  key={service.name}
+                  service={service}
+                  selected={
+                    selection?.type === "service" && selection.serviceName === service.name
+                  }
+                  onSelect={() => onSelect({ type: "service", serviceName: service.name })}
+                />
+              ))}
+            </div>
+          </section>
+        ) : null}
         <nav className="min-h-0 flex-1 overflow-y-auto p-2" aria-label="Services by working copy">
+          <div className="flex items-center justify-between px-2 pb-1.5">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+              All services
+            </span>
+          </div>
           {filteredGroups.length === 0 ? (
             <p className="p-3 text-xs text-slate-500">No matching services.</p>
           ) : (
@@ -79,8 +124,8 @@ export function Sidebar({ services, groups, query, selection, onQueryChange, onS
               const showGroup = !onlyService || group.title !== onlyService.name;
               const selected =
                 selection?.type === "working-copy" && selection.groupKey === group.key;
-              const running = group.services.filter(
-                (service) => service.status === "running",
+              const running = group.services.filter((service) =>
+                isServiceActive(service.status),
               ).length;
               return (
                 <section key={group.key} className="mb-2">

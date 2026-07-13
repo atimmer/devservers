@@ -9,9 +9,17 @@ const styles: Record<ServiceStatus, string> = {
   error: "border-rose-400/30 bg-rose-400/10 text-rose-200",
 };
 
+const dotStyles: Record<ServiceStatus, string> = {
+  starting: "animate-pulse bg-sky-300 shadow-[0_0_8px_rgba(125,211,252,0.7)]",
+  running: "bg-emerald-300 shadow-[0_0_8px_rgba(110,231,183,0.7)]",
+  stopped: "bg-slate-700",
+  exited: "bg-amber-300",
+  error: "bg-rose-400",
+};
+
 export const StatusDot = ({ status }: { status: ServiceStatus }) => (
   <span
-    className={`h-2 w-2 shrink-0 rounded-full ${styles[status].split(" ")[1]}`}
+    className={`h-2.5 w-2.5 shrink-0 rounded-full ${dotStyles[status]}`}
     aria-label={statusLabel(status)}
   />
 );

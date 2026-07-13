@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { ServiceInfo } from "../src/api";
-import { getStopImpact, groupServices, parseEnv, summarizeAction } from "../src/dashboard";
+import {
+  getStopImpact,
+  groupServices,
+  isServiceActive,
+  parseEnv,
+  summarizeAction,
+} from "../src/dashboard";
 
 const service = (name: string, cwd: string, dependsOn?: string[]): ServiceInfo => ({
   name,
@@ -50,5 +56,13 @@ describe("dashboard helpers", () => {
 
   it("parses values containing equals signs", () => {
     expect(parseEnv("TOKEN=a=b\nEMPTY=\ninvalid")).toEqual({ TOKEN: "a=b", EMPTY: "" });
+  });
+
+  it("treats starting and running services as active", () => {
+    expect(isServiceActive("starting")).toBe(true);
+    expect(isServiceActive("running")).toBe(true);
+    expect(isServiceActive("stopped")).toBe(false);
+    expect(isServiceActive("exited")).toBe(false);
+    expect(isServiceActive("error")).toBe(false);
   });
 });

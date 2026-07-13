@@ -6,7 +6,7 @@
 - In production, the daemon serves the UI at `/ui/`.
 - Daemon manages tmux session `devservers` and exposes REST + WS APIs.
 - CLI is a thin wrapper over config + daemon endpoints.
-- Desktop UI uses a compact left sidebar with fuzzy search, working-copy hierarchy, status dots, and per-group running counts; the main pane prioritizes service controls and logs.
+- Desktop UI uses a compact left sidebar with a pinned started-services section, fuzzy search, working-copy hierarchy, high-contrast status dots, and per-group running counts; the main pane prioritizes service controls and logs.
 
 ## Process model
 

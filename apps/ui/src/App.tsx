@@ -24,6 +24,7 @@ import {
   getStopImpact,
   getWorkingDirectory,
   groupServices,
+  isServiceActive,
   summarizeAction,
   type MainSelection,
 } from "./dashboard";
@@ -124,9 +125,7 @@ function AppContent() {
     }
     if (selection?.type === "service" && serviceMap.has(selection.serviceName)) return;
     if (selection?.type === "working-copy" && groupMap.has(selection.groupKey)) return;
-    const running = services.find(
-      (service) => service.status === "running" || service.status === "starting",
-    );
+    const running = services.find((service) => isServiceActive(service.status));
     select(
       running
         ? { type: "service", serviceName: running.name }
@@ -226,7 +225,7 @@ function AppContent() {
 
   const counts = useMemo(
     () => ({
-      running: services.filter((service) => service.status === "running").length,
+      running: services.filter((service) => isServiceActive(service.status)).length,
       attention: services.filter(
         (service) => service.status === "error" || service.status === "exited",
       ).length,
