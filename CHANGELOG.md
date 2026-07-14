@@ -8,7 +8,7 @@
 
 ### Changed
 - Service state is now daemon-owned and reports `starting`, `running`, `stopped`, `exited`, or `error`, retaining exit codes, signals, failed-process logs, and state across daemon restarts instead of inferring errors from selected UI logs.
-- The UI now uses a compact log-focused layout with a pinned started-services section, clearer high-contrast status indicators and working-copy hierarchy, monospace commands and paths, persistent operation notices, cascade confirmations, conflicting-action locks, save-and-restart editing, and a shorter narrow-screen service panel.
+- The UI now uses a compact log-focused layout with a pinned started-services section that can grow to 60% of the viewport height, clearer high-contrast status indicators and working-copy hierarchy, monospace commands and paths, persistent operation notices, cascade confirmations, conflicting-action locks, save-and-restart editing, and a shorter narrow-screen service panel.
 - The UI, daemon, and CLI have been split into focused modules, the terminal is lazy-loaded, shared API types are reused across packages, and the UI now uses stable React plus the maintained scoped xterm packages.
 - CLI service registration and removal now use daemon validation and lifecycle behavior instead of editing config independently.
 

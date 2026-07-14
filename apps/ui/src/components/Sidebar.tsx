@@ -96,7 +96,7 @@ export function Sidebar({ services, groups, query, selection, onQueryChange, onS
                 {startedServices.length}
               </span>
             </div>
-            <div className="max-h-36 overflow-y-auto" aria-label="Started services">
+            <div className="max-h-[60vh] overflow-y-auto" aria-label="Started services">
               {startedServices.map((service) => (
                 <ServiceRow
                   key={service.name}
