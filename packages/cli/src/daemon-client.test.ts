@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchDaemonServices, mutateService, runServiceAction } from "./daemon-client.js";
+import {
+  fetchDaemonServices,
+  fetchServiceLogs,
+  mutateService,
+  runServiceAction,
+} from "./daemon-client.js";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -34,6 +39,21 @@ describe("daemon client", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       "http://localhost:4141/services/api",
       expect.objectContaining({ method: "DELETE" }),
+    );
+  });
+
+  it("requests bounded log snapshots with encoded service names", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response('{"service":"web app","status":"running","logs":"ready"}'),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      fetchServiceLogs("http://localhost:4141", "web app", { lines: 50, ansi: true }),
+    ).resolves.toMatchObject({ logs: "ready" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:4141/services/web%20app/logs/snapshot?lines=50&ansi=1",
+      undefined,
     );
   });
 

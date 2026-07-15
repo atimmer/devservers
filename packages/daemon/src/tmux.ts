@@ -163,7 +163,9 @@ export const capturePane = async (
     `${SESSION_NAME}:${windowName}`,
     "-p",
     "-S",
-    start.toString()
+    start.toString(),
+    "-E",
+    "-1"
   ];
   if (options.ansi) {
     args.push("-e");

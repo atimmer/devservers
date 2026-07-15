@@ -341,6 +341,20 @@ export const registerRoutes = (
     return serviceActionResult("restart", service.name, affected);
   });
 
+  server.get("/services/:name/logs/snapshot", async (request, reply) => {
+    const params = request.params as { name: string };
+    const query = request.query as { lines?: string; ansi?: string };
+    const service = (await manager.listServices()).find((entry) => entry.name === params.name);
+    if (!service) {
+      return reply.code(404).send({ error: "service not found" });
+    }
+
+    const logs = await capturePane(params.name, normalizeLogLines(query?.lines), {
+      ansi: query?.ansi === "1" || query?.ansi === "true"
+    });
+    return { service: params.name, status: service.status, logs };
+  });
+
   server.get("/services/:name/logs", { websocket: true }, (connection, request) => {
     const params = request.params as { name: string };
     const query = request.query as { lines?: string; ansi?: string };

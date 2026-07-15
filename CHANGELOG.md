@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- CLI agents can now retrieve genuinely bounded service log snapshots with `devservers logs <service>`, including optional line limits, ANSI preservation, and machine-readable output.
 - Service lifecycle results now report the requested target and every service actually affected by dependency cascades; the CLI exposes machine-readable `--json` output and human-readable cascade summaries.
 - Pull requests and main-branch pushes now run build, lint, typecheck, and test verification in CI.
 

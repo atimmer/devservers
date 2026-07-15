@@ -6,7 +6,12 @@ import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { DAEMON_PORT, devServerServiceSchema } from "@24letters/devservers-shared";
 import { readConfig, resolveConfigPath } from "./config.js";
-import { fetchDaemonServices, mutateService, runServiceAction } from "./daemon-client.js";
+import {
+  fetchDaemonServices,
+  fetchServiceLogs,
+  mutateService,
+  runServiceAction,
+} from "./daemon-client.js";
 import { ensureDaemonRunning, registerManagerCommands } from "./manager.js";
 import { formatServiceUrl, parseEnvVars, printResult } from "./service-utils.js";
 
@@ -91,6 +96,26 @@ program
       throw new Error(`Service '${name}' is running but no port is known yet.`);
     const url = formatServiceUrl(options.scheme, options.host, service.port, options.path);
     printResult({ service: name, url }, global.json, url);
+  });
+
+program
+  .command("logs")
+  .description("Print recent logs for a service")
+  .argument("<service>")
+  .option("-n, --lines <count>", "number of recent lines", "200")
+  .option("--ansi", "preserve ANSI terminal escape sequences", false)
+  .action(async (name: string, commandOptions: { lines: string; ansi: boolean }) => {
+    const lines = Number(commandOptions.lines);
+    if (!Number.isInteger(lines) || lines <= 0) {
+      throw new Error("--lines must be a positive integer");
+    }
+    const options = await readyDaemon();
+    const result = await fetchServiceLogs(options.daemon, name, {
+      lines,
+      ansi: commandOptions.ansi,
+    });
+    if (options.json) return console.log(JSON.stringify(result));
+    if (result.logs) process.stdout.write(`${result.logs}\n`);
   });
 
 program

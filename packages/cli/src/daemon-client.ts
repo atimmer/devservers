@@ -11,6 +11,11 @@ export type DaemonServiceSummary = Pick<
 >;
 
 export type DaemonActionResult = { ok: true } & Partial<Omit<ServiceActionResult, "ok">>;
+export type DaemonLogsSnapshot = {
+  service: string;
+  status: ServiceInfo["status"];
+  logs: string;
+};
 
 const errorMessage = async (response: Response) => {
   const text = await response.text();
@@ -43,6 +48,19 @@ export const fetchDaemonServices = async (baseUrl: string) => {
     ...(exitCode === undefined ? {} : { exitCode }),
     ...(exitSignal === undefined ? {} : { exitSignal }),
   }));
+};
+
+export const fetchServiceLogs = (
+  baseUrl: string,
+  name: string,
+  options: { lines: number; ansi: boolean },
+) => {
+  const query = new URLSearchParams({ lines: String(options.lines) });
+  if (options.ansi) query.set("ansi", "1");
+  return requestDaemon<DaemonLogsSnapshot>(
+    baseUrl,
+    `/services/${encodeURIComponent(name)}/logs/snapshot?${query.toString()}`,
+  );
 };
 
 export const mutateService = (

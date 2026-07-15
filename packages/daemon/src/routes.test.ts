@@ -65,4 +65,30 @@ describe("daemon routes", () => {
     expect(response.statusCode).toBe(404);
     expect(response.json()).toEqual({ error: "service not found" });
   });
+
+  it("returns an empty log snapshot for a configured stopped service", async () => {
+    await server.inject({
+      method: "POST",
+      url: "/services",
+      payload: { name: "api", cwd: tempDir, command: "pnpm dev" }
+    });
+
+    const response = await server.inject({
+      method: "GET",
+      url: "/services/api/logs/snapshot?lines=50"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ service: "api", status: "stopped", logs: "" });
+  });
+
+  it("rejects log snapshots for unknown services", async () => {
+    const response = await server.inject({
+      method: "GET",
+      url: "/services/missing/logs/snapshot"
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual({ error: "service not found" });
+  });
 });

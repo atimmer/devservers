@@ -4,7 +4,7 @@ const execaMock = vi.hoisted(() => vi.fn());
 
 vi.mock("execa", () => ({ execa: execaMock }));
 
-import { startWindow } from "./tmux.js";
+import { capturePane, startWindow } from "./tmux.js";
 
 describe("startWindow", () => {
   beforeEach(() => {
@@ -44,6 +44,24 @@ describe("startWindow", () => {
       "-c",
       "/tmp/api",
       "pnpm dev"
+    ]);
+  });
+
+  it("captures a bounded number of pane lines", async () => {
+    execaMock
+      .mockResolvedValueOnce({ stdout: "api" })
+      .mockResolvedValueOnce({ stdout: "line one\nline two" });
+
+    await expect(capturePane("api", 2)).resolves.toBe("line one\nline two");
+    expect(execaMock).toHaveBeenLastCalledWith("tmux", [
+      "capture-pane",
+      "-t",
+      "devservers:api",
+      "-p",
+      "-S",
+      "-2",
+      "-E",
+      "-1"
     ]);
   });
 });
